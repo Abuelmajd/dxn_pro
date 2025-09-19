@@ -1,0 +1,438 @@
+// ================================================================================================
+// ============================= Google Apps Script Backend (Code.gs) =============================
+//
+// INSTRUCTIONS:
+//
+// 1. Ensure your Google Sheet has 8 tabs with these exact English names:
+//    - Products
+//    - Categories
+//    - Customers
+//    - Orders
+//    - OrderItems
+//    - Expenses
+//    - CustomerSelections
+//    - CustomerSelectionItems
+//
+// 2. VERY IMPORTANT: The first row of each sheet MUST have the following English headers exactly.
+//    Please copy and paste these headers precisely to ensure the code works correctly.
+//
+//    - Products sheet headers:
+//      id, name, categoryId, description, price, memberPrice, imageUrl, isAvailable, points
+//
+//    - Categories sheet headers:
+//      id, name
+//
+//    - Customers sheet headers:
+//      id, name, address, phone, whatsapp, email
+//
+//    - Orders sheet headers:
+//      id, customerId, customerName, totalPrice, totalPoints, createdAt
+//
+//    - OrderItems sheet headers:
+//      orderId, productId, name, price, quantity, points
+//
+//    - Expenses sheet headers:
+//      id, description, amount, date
+//
+//    - CustomerSelections sheet headers:
+//      id, customerName, customerPhone, customerEmail, createdAt, status
+//
+//    - CustomerSelectionItems sheet headers:
+//      selectionId, productId, name, price, quantity
+//
+// 3. In Google Sheets, go to Extensions > Apps Script.
+// 4. Delete any existing code in `Code.gs` and paste this entire script.
+// 5. Click Deploy > New deployment.
+// 6. Select "Web app" as the deployment type.
+// 7. In the settings:
+//    - For "Execute as", select "Me".
+//    - For "Who has access", select "Anyone".
+// 8. Click "Deploy". Authorize the script when prompted.
+// 9. Copy the Web app URL and paste it into the `GOOGLE_SCRIPT_URL` variable in your frontend code
+//    (in the file `context/AppContext.tsx`).
+//
+// ================================================================================================
+
+// --- CONFIGURATION ---
+const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+
+const SHEET_MAPPING = {
+  PRODUCTS: 'Products',
+  CATEGORIES: 'Categories',
+  CUSTOMERS: 'Customers',
+  ORDERS: 'Orders',
+  ORDER_ITEMS: 'OrderItems',
+  EXPENSES: 'Expenses',
+  CUSTOMER_SELECTIONS: 'CustomerSelections',
+  CUSTOMER_SELECTION_ITEMS: 'CustomerSelectionItems'
+};
+
+const REQUIRED_SCHEMA = {
+  'Products': ['id', 'name', 'categoryId', 'description', 'price', 'memberPrice', 'imageUrl', 'isAvailable', 'points'],
+  'Categories': ['id', 'name'],
+  'Customers': ['id', 'name', 'address', 'phone', 'whatsapp', 'email'],
+  'Orders': ['id', 'customerId', 'customerName', 'totalPrice', 'totalPoints', 'createdAt'],
+  'OrderItems': ['orderId', 'productId', 'name', 'price', 'quantity', 'points'],
+  'Expenses': ['id', 'description', 'amount', 'date'],
+  'CustomerSelections': ['id', 'customerName', 'customerPhone', 'customerEmail', 'createdAt', 'status'],
+  'CustomerSelectionItems': ['selectionId', 'productId', 'name', 'price', 'quantity']
+};
+
+
+// --- CORE FUNCTIONS ---
+
+/**
+ * Main entry point for GET requests. Fetches all initial data for the app.
+ */
+function doGet(e) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000); 
+
+  try {
+    const data = {
+      products: getSheetData(SHEET_MAPPING.PRODUCTS),
+      categories: getSheetData(SHEET_MAPPING.CATEGORIES),
+      customers: getSheetData(SHEET_MAPPING.CUSTOMERS),
+      orders: getSheetData(SHEET_MAPPING.ORDERS),
+      expenses: getSheetData(SHEET_MAPPING.EXPENSES),
+      customerSelections: getSheetData(SHEET_MAPPING.CUSTOMER_SELECTIONS),
+    };
+    
+    const orderItems = getSheetData(SHEET_MAPPING.ORDER_ITEMS);
+    data.orders.forEach(order => {
+        order.items = orderItems.filter(item => item.orderId === order.id);
+    });
+
+    const selectionItems = getSheetData(SHEET_MAPPING.CUSTOMER_SELECTION_ITEMS);
+    data.customerSelections.forEach(selection => {
+        selection.items = selectionItems.filter(item => item.selectionId === selection.id);
+    });
+
+    return createJsonResponse({ status: 'success', data: data });
+  } catch (error) {
+    Logger.log(error);
+    return createJsonResponse({ status: 'error', message: error.message, stack: error.stack });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Main entry point for POST requests. Acts as a router for various actions.
+ */
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000); 
+  
+  try {
+    const request = JSON.parse(e.postData.contents);
+    const action = request.action;
+    const payload = request.payload;
+
+    if (!action) throw new Error("Action not specified.");
+
+    switch (action) {
+      case 'addProduct': return handleAddProduct(payload);
+      case 'updateProduct': return handleUpdateProduct(payload);
+      case 'deleteProduct': return handleDeleteProduct(payload);
+      case 'updateProductStatus': return handleUpdateProductStatus(payload);
+      case 'addOrder': return handleAddOrder(payload);
+      case 'addExpense': return handleAddExpense(payload);
+      case 'deleteExpense': return handleDeleteExpense(payload);
+      case 'addCustomerSelection': return handleAddCustomerSelection(payload);
+      case 'processSelection': return handleProcessSelection(payload);
+      case 'healthCheck': return handleHealthCheck();
+      default: throw new Error(`Unknown action: ${action}`);
+    }
+  } catch (error) {
+    Logger.log(error);
+    return createJsonResponse({ status: 'error', message: error.message, stack: error.stack });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Handles OPTIONS requests for CORS preflight checks.
+ */
+function doOptions(e) {
+  const response = ContentService.createTextOutput()
+    .setMimeType(ContentService.MimeType.JSON);
+  response.addHttpHeader('Access-Control-Allow-Origin', '*');
+  response.addHttpHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.addHttpHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return response;
+}
+
+// --- ACTION HANDLERS ---
+
+function handleAddProduct(payload) {
+    const newProduct = { ...payload, id: generateUniqueId(), isAvailable: true, points: payload.points || 0 };
+    appendRowFromObject(SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.PRODUCTS), newProduct);
+    return createJsonResponse({ status: 'success', data: newProduct });
+}
+
+function handleUpdateProduct(payload) {
+    updateRowInSheet(SHEET_MAPPING.PRODUCTS, payload);
+    return createJsonResponse({ status: 'success', data: payload });
+}
+
+function handleDeleteProduct(payload) {
+    deleteRowById(SHEET_MAPPING.PRODUCTS, payload.productId);
+    return createJsonResponse({ status: 'success' });
+}
+
+function handleUpdateProductStatus(payload) {
+    const product = updateRowInSheet(SHEET_MAPPING.PRODUCTS, payload, 'id');
+    return createJsonResponse({ status: 'success', data: product });
+}
+
+function handleAddOrder(payload) {
+    const { customerData, items } = payload;
+    
+    const customersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMERS);
+    const headers = getHeaders(customersSheet);
+    const lowerCaseHeaders = headers.map(h => h.toLowerCase());
+    const phoneColumnIndex = lowerCaseHeaders.indexOf('phone');
+    const customersData = customersSheet.getDataRange().getValues();
+    
+    let customerRowIndex = -1;
+    if (customerData.phone && phoneColumnIndex !== -1) {
+      customerRowIndex = customersData.findIndex(row => row[phoneColumnIndex] == customerData.phone);
+    }
+    
+    let customer;
+
+    if (customerRowIndex !== -1) {
+        const existingCustomer = mapRowToAnObject(customersData[customerRowIndex], headers);
+        customer = { ...existingCustomer, ...customerData };
+        const updatedRow = headers.map(header => customer[header] || '');
+        customersSheet.getRange(customerRowIndex + 1, 1, 1, headers.length).setValues([updatedRow]);
+    } else {
+        customer = { ...customerData, id: generateUniqueId() };
+        appendRowFromObject(customersSheet, customer);
+    }
+    
+    const ordersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDERS);
+    const newOrderId = generateUniqueId();
+    const totalPrice = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const totalPoints = items.reduce((sum, item) => sum + ((item.points || 0) * (item.quantity || 1)), 0);
+    
+    const newOrder = {
+        id: newOrderId,
+        customerId: customer.id,
+        customerName: customer.name,
+        totalPrice: totalPrice,
+        totalPoints: totalPoints,
+        createdAt: new Date().toISOString()
+    };
+    appendRowFromObject(ordersSheet, newOrder);
+
+    const orderItemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDER_ITEMS);
+    items.forEach(item => {
+        const newOrderItem = { ...item, orderId: newOrderId, points: item.points || 0 };
+        appendRowFromObject(orderItemsSheet, newOrderItem);
+    });
+
+    return createJsonResponse({ status: 'success', data: { newOrder: { ...newOrder, items }, updatedCustomer: customer } });
+}
+
+function handleAddExpense(payload) {
+    const newExpense = { ...payload, id: generateUniqueId(), date: new Date(payload.date).toISOString() };
+    appendRowFromObject(SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.EXPENSES), newExpense);
+    return createJsonResponse({ status: 'success', data: newExpense });
+}
+
+function handleDeleteExpense(payload) {
+    deleteRowById(SHEET_MAPPING.EXPENSES, payload.expenseId);
+    return createJsonResponse({ status: 'success' });
+}
+
+function handleAddCustomerSelection(payload) {
+    const selectionsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMER_SELECTIONS);
+    const newId = generateUniqueId();
+    const newSelection = { ...payload, id: newId, createdAt: new Date().toISOString(), status: 'pending' };
+    appendRowFromObject(selectionsSheet, newSelection);
+    
+    const selectionItemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMER_SELECTION_ITEMS);
+    payload.items.forEach(item => {
+        const newSelectionItem = { ...item, selectionId: newId };
+        appendRowFromObject(selectionItemsSheet, newSelectionItem);
+    });
+
+    return createJsonResponse({ status: 'success', data: newSelection });
+}
+
+function handleProcessSelection(payload) {
+    updateRowInSheet(SHEET_MAPPING.CUSTOMER_SELECTIONS, { id: payload.selectionId, status: 'processed' });
+    return createJsonResponse({ status: 'success' });
+}
+
+function handleHealthCheck() {
+  const results = [];
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const allSheets = spreadsheet.getSheets().map(s => s.getName());
+
+  for (const sheetName in REQUIRED_SCHEMA) {
+    if (allSheets.includes(sheetName)) {
+      results.push({ check: `Sheet '${sheetName}'`, status: 'success', details: `Sheet exists.` });
+      
+      const sheet = spreadsheet.getSheetByName(sheetName);
+      const actualHeaders = getHeaders(sheet);
+      const requiredHeaders = REQUIRED_SCHEMA[sheetName];
+      
+      const missingHeaders = requiredHeaders.filter(h => !actualHeaders.includes(h));
+
+      if (missingHeaders.length === 0) {
+        results.push({ check: `Headers for '${sheetName}'`, status: 'success', details: 'All required headers are present.' });
+      } else {
+        results.push({ check: `Headers for '${sheetName}'`, status: 'error', details: `Missing headers: ${missingHeaders.join(', ')}` });
+      }
+
+    } else {
+      results.push({ check: `Sheet '${sheetName}'`, status: 'error', details: `Sheet is missing.` });
+      results.push({ check: `Headers for '${sheetName}'`, status: 'error', details: `Cannot check headers because sheet is missing.` });
+    }
+  }
+  return createJsonResponse({ status: 'success', data: results });
+}
+
+
+// --- HELPER FUNCTIONS ---
+
+function createJsonResponse(obj) {
+  const output = ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+  output.addHttpHeader('Access-Control-Allow-Origin', '*');
+  return output;
+}
+
+function generateUniqueId() {
+  return Utilities.getUuid().substring(0, 8);
+}
+
+function getHeaders(sheet) {
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => h.toString().trim());
+}
+
+function getSheetData(sheetName) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
+  if (!sheet) throw new Error(`Sheet "${sheetName}" not found.`);
+  
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+
+  const headers = getHeaders(sheet);
+  const data = [];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === '') continue; // Skip empty rows
+    data.push(mapRowToAnObject(values[i], headers));
+  }
+  return data;
+}
+
+function mapRowToAnObject(row, headers) {
+    const obj = {};
+    headers.forEach((header, index) => {
+        if (!header) return;
+        let value = row[index];
+        const lowerHeader = header.toLowerCase();
+
+        if (lowerHeader.includes('price') || lowerHeader.includes('amount') || lowerHeader.includes('quantity') || lowerHeader.includes('points')) {
+            if (typeof value === 'number' && isFinite(value)) {
+                // Value is already a valid number, do nothing.
+            } else if (typeof value === 'string' && value.trim() !== '') {
+                // 1. Remove anything that isn't a digit, comma, period, or hyphen.
+                let cleanedValue = value.replace(/[^\d,.-]/g, '').trim();
+                
+                // 2. Determine if comma is decimal separator (e.g., "1.234,56")
+                const lastComma = cleanedValue.lastIndexOf(',');
+                const lastPeriod = cleanedValue.lastIndexOf('.');
+
+                if (lastComma > lastPeriod) {
+                    // Comma is likely decimal separator. Remove all periods, then replace comma with period.
+                    cleanedValue = cleanedValue.replace(/\./g, '').replace(',', '.');
+                } else {
+                    // Period is likely decimal separator. Remove all commas.
+                    cleanedValue = cleanedValue.replace(/,/g, '');
+                }
+                
+                const parsed = parseFloat(cleanedValue);
+                value = isNaN(parsed) ? 0 : parsed;
+            } else {
+                value = 0; // Default for non-string, non-number types or empty strings
+            }
+        } else if (lowerHeader === 'isavailable') {
+            value = value === true || String(value).toLowerCase() === 'true';
+        } else if ((lowerHeader.includes('date') || lowerHeader.includes('createdat')) && value) {
+            if (value instanceof Date) {
+              if (!isNaN(value.getTime())) {
+                value = value.toISOString();
+              }
+            } else {
+              const dateObj = new Date(value);
+              if (!isNaN(dateObj.getTime())) {
+                  value = dateObj.toISOString();
+              }
+            }
+        }
+        obj[header] = value;
+    });
+    return obj;
+}
+
+function appendRowFromObject(sheet, obj) {
+    const headers = getHeaders(sheet);
+    const newRow = headers.map(header => (obj[header] !== undefined ? obj[header] : ''));
+    sheet.appendRow(newRow);
+}
+
+function updateRowInSheet(sheetName, payload, idKey = 'id') {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
+    const headers = getHeaders(sheet);
+    const data = sheet.getDataRange().getValues();
+    
+    const idToFind = payload[idKey];
+    
+    // Case-insensitive search for the ID column index
+    const lowerCaseHeaders = headers.map(h => h.toLowerCase());
+    const idColumnIndex = lowerCaseHeaders.indexOf(idKey.toLowerCase());
+
+    if (idColumnIndex === -1) {
+        throw new Error(`ID header "${idKey}" not found in sheet "${sheetName}". Please check column spelling and case.`);
+    }
+
+    const rowIndex = data.findIndex(row => row[idColumnIndex] == idToFind);
+    
+    if (rowIndex === -1) throw new Error(`Record with ID ${idToFind} not found in "${sheetName}".`);
+
+    const existingRecord = mapRowToAnObject(data[rowIndex], headers);
+    const updatedRecord = { ...existingRecord, ...payload };
+    
+    const updatedRow = headers.map(header => (updatedRecord[header] !== undefined ? updatedRecord[header] : ''));
+
+    sheet.getRange(rowIndex + 1, 1, 1, headers.length).setValues([updatedRow]);
+    
+    return updatedRecord;
+}
+
+
+function deleteRowById(sheetName, recordId) {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
+    const headers = getHeaders(sheet);
+    
+    // Case-insensitive search for the ID column index
+    const lowerCaseHeaders = headers.map(h => h.toLowerCase());
+    const idColumnIndex = lowerCaseHeaders.indexOf('id');
+    
+    if (idColumnIndex === -1) throw new Error(`'id' column not found in sheet "${sheetName}". Please check column spelling and case.`);
+    
+    const data = sheet.getDataRange().getValues();
+    const rowIndex = data.findIndex(row => row[idColumnIndex] == recordId);
+    
+    if (rowIndex > 0) { // rowIndex is 0-based, but sheet rows are 1-based, and we skip header
+        sheet.deleteRow(rowIndex + 1);
+    } else {
+        throw new Error(`Record with ID ${recordId} not found in "${sheetName}".`);
+    }
+}
