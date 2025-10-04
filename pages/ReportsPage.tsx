@@ -23,28 +23,28 @@ const ReportCard: React.FC<{ title: string, stats: FinancialStats }> = ({ title,
     const { t, formatCurrency } = useAppContext();
     const { totalRevenue, totalExpenses, netProfit } = stats;
     const hasData = totalRevenue > 0 || totalExpenses > 0;
-    const netProfitColor = netProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+    const netProfitColor = netProfit >= 0 ? 'text-green-400' : 'text-red-400';
 
     return (
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-            <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-4">{title}</h3>
+        <div className="bg-card rounded-xl shadow-lg p-6">
+            <h3 className="text-xl font-bold text-text-primary mb-4">{title}</h3>
             {hasData ? (
                  <div className="space-y-3">
-                    <div className="flex justify-between py-2 border-b border-slate-100 dark:border-slate-700/50">
-                        <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{t('totalRevenue')}</span>
-                        <span className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(totalRevenue)}</span>
+                    <div className="flex justify-between py-2 border-b border-border">
+                        <span className="text-sm font-medium text-text-secondary">{t('totalRevenue')}</span>
+                        <span className="font-semibold text-text-primary">{formatCurrency(totalRevenue)}</span>
                     </div>
-                    <div className="flex justify-between py-2 border-b border-slate-100 dark:border-slate-700/50">
-                        <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{t('totalExpenses')}</span>
-                        <span className="font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(totalExpenses)}</span>
+                    <div className="flex justify-between py-2 border-b border-border">
+                        <span className="text-sm font-medium text-text-secondary">{t('totalExpenses')}</span>
+                        <span className="font-semibold text-text-primary">{formatCurrency(totalExpenses)}</span>
                     </div>
                     <div className="flex justify-between pt-3">
-                        <span className="text-sm font-bold text-slate-600 dark:text-slate-300">{t('netProfit')}</span>
+                        <span className="text-sm font-bold text-text-primary">{t('netProfit')}</span>
                         <span className={`font-bold text-lg ${netProfitColor}`}>{formatCurrency(netProfit)}</span>
                     </div>
                 </div>
             ) : (
-                <p className="text-center text-slate-500 py-16">{t('noDataForPeriod')}</p>
+                <p className="text-center text-text-secondary py-16">{t('noDataForPeriod')}</p>
             )}
         </div>
     );
@@ -99,8 +99,8 @@ const ReportsPage: React.FC = () => {
     return (
         <div className="max-w-6xl mx-auto">
             <div className="mb-8">
-                <h1 className="text-3xl font-bold text-slate-800 dark:text-white">{t('reports')}</h1>
-                <p className="mt-1 text-slate-500 dark:text-slate-400">{t('financialSummary')}</p>
+                <h1 className="text-3xl font-bold text-text-primary">{t('reports')}</h1>
+                <p className="mt-1 text-text-secondary">{t('financialSummary')}</p>
             </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -111,19 +111,19 @@ const ReportsPage: React.FC = () => {
             </div>
 
             <div className="mt-12">
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-4">{t('monthlyPointsSummary')}</h2>
-                <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                <h2 className="text-2xl font-bold text-text-primary mb-4">{t('monthlyPointsSummary')}</h2>
+                <div className="bg-card rounded-xl shadow-lg p-6">
                 {monthlyPoints.length > 0 ? (
                     <ul className="space-y-3">
                         {monthlyPoints.map(({ month, totalPoints }) => (
-                            <li key={month} className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/50">
-                                <span className="font-medium text-slate-600 dark:text-slate-300">{month}</span>
-                                <span className="font-bold text-blue-600 dark:text-blue-400">{formatNumber(totalPoints)} {t('points')}</span>
+                            <li key={month} className="flex justify-between items-center py-2 border-b border-border">
+                                <span className="font-medium text-text-primary">{month}</span>
+                                <span className="font-bold text-accent">{formatNumber(totalPoints)} {t('points')}</span>
                             </li>
                         ))}
                     </ul>
                 ) : (
-                    <p className="text-center text-slate-500 py-8">{t('noDataForPeriod')}</p>
+                    <p className="text-center text-text-secondary py-8">{t('noDataForPeriod')}</p>
                 )}
                 </div>
             </div>

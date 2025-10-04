@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { HealthCheckResult } from '../types';
@@ -46,12 +45,12 @@ const SetupCheckPage: React.FC = () => {
     return (
         <div className="max-w-4xl mx-auto">
             <div className="mb-6">
-                <h1 className="text-3xl font-bold text-slate-800 dark:text-white">{t('setupCheck')}</h1>
-                <p className="mt-1 text-slate-500 dark:text-slate-400">{t('setupCheckDescription')}</p>
+                <h1 className="text-3xl font-bold text-text-primary">{t('setupCheck')}</h1>
+                <p className="mt-1 text-text-secondary">{t('setupCheckDescription')}</p>
             </div>
             
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 sm:p-8">
-                <p className="mb-6 text-sm text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 p-3 rounded-lg">
+            <div className="bg-card rounded-xl shadow-lg p-6 sm:p-8">
+                <p className="mb-6 text-sm text-text-secondary bg-card-secondary p-3 rounded-lg">
                     {t('setupInstructions')}
                 </p>
 
@@ -59,7 +58,7 @@ const SetupCheckPage: React.FC = () => {
                     <button 
                         onClick={handleRunCheck} 
                         disabled={isLoading}
-                        className="px-8 py-3 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
+                        className="px-8 py-3 rounded-lg font-bold text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
                     >
                         {isLoading ? t('checking') : t('startCheck')}
                     </button>
@@ -67,22 +66,22 @@ const SetupCheckPage: React.FC = () => {
 
                 {isLoading && (
                     <div className="flex justify-center items-center mt-8">
-                        <div className="w-8 h-8 border-4 border-t-4 border-t-indigo-600 border-slate-200 dark:border-slate-700 rounded-full animate-spin"></div>
+                        <div className="w-8 h-8 border-4 border-t-4 border-t-accent border-border rounded-full animate-spin"></div>
                     </div>
                 )}
                 
                 {results.length > 0 && (
                     <div className="mt-8">
-                        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-4">{t('checkResults')}</h2>
+                        <h2 className="text-2xl font-bold text-text-primary mb-4">{t('checkResults')}</h2>
                         <div className="space-y-3">
                             {results.map((result, index) => (
-                                <div key={index} className="flex items-start gap-4 p-4 rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                                <div key={index} className="flex items-start gap-4 p-4 rounded-lg bg-card-secondary">
                                     <div className="flex-shrink-0">
                                         {result.status === 'success' ? <CheckIcon /> : <XCircleIcon />}
                                     </div>
                                     <div>
-                                        <p className="font-semibold text-slate-800 dark:text-white">{result.check}</p>
-                                        <p className="text-sm text-slate-600 dark:text-slate-400">{getTranslatedDetails(result)}</p>
+                                        <p className="font-semibold text-text-primary">{result.check}</p>
+                                        <p className="text-sm text-text-secondary">{getTranslatedDetails(result)}</p>
                                     </div>
                                 </div>
                             ))}

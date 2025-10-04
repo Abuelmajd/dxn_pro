@@ -10,6 +10,8 @@ export interface AppSettings {
   language: Language;
   currency: Currency;
   numberFormat: NumberFormat;
+  // FIX: Add theme property to support theme toggling.
+  theme: 'light' | 'dark';
 }
 
 export interface Customer {

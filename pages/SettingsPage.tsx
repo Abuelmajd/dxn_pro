@@ -13,13 +13,17 @@ const SettingsPage: React.FC = () => {
         updateSettings({ numberFormat: e.target.value as NumberFormat });
     };
 
+    const handleThemeChange = (theme: 'light' | 'dark') => {
+        updateSettings({ theme });
+    };
+
     const renderSelect = (label: string, value: string, onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void, options: { value: string, label: string }[]) => (
         <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{label}</label>
+            <label className="block text-sm font-medium text-text-primary mb-2">{label}</label>
             <select
                 value={value}
                 onChange={onChange}
-                className="w-full p-3 bg-slate-100 dark:bg-slate-700 rounded-lg border border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+                className="w-full p-3 bg-input-bg rounded-lg border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
             >
                 {options.map(option => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -31,11 +35,11 @@ const SettingsPage: React.FC = () => {
     return (
         <div className="max-w-2xl mx-auto">
             <div className="mb-8">
-                <h1 className="text-3xl font-bold text-slate-800 dark:text-white">{t('appSettings')}</h1>
-                <p className="mt-1 text-slate-500 dark:text-slate-400">{t('customizeAppearance')}</p>
+                <h1 className="text-3xl font-bold text-text-primary">{t('appSettings')}</h1>
+                <p className="mt-1 text-text-secondary">{t('customizeAppearance')}</p>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 sm:p-8">
+            <div className="bg-card rounded-xl shadow-lg p-6 sm:p-8">
                 <div className="space-y-8">
                     {renderSelect(t('language'), settings.language, handleLanguageChange, [
                         { value: 'ar', label: t('arabic') },
@@ -46,6 +50,25 @@ const SettingsPage: React.FC = () => {
                         { value: 'ar', label: t('arabicNumerals') },
                         { value: 'en', label: t('englishNumerals') },
                     ])}
+                    
+                    <div>
+                        <label className="block text-sm font-medium text-text-primary mb-2">{t('theme')}</label>
+                        <div className="flex items-center gap-2 p-1 bg-input-bg rounded-lg border border-border">
+                            <button
+                                onClick={() => handleThemeChange('light')}
+                                className={`flex-1 p-2 rounded-md text-sm font-semibold transition-colors ${settings.theme === 'light' ? 'bg-primary text-white' : 'text-text-secondary hover:bg-card-secondary'}`}
+                            >
+                                {t('lightMode')}
+                            </button>
+                            <button
+                                onClick={() => handleThemeChange('dark')}
+                                className={`flex-1 p-2 rounded-md text-sm font-semibold transition-colors ${settings.theme === 'dark' ? 'bg-primary text-white' : 'text-text-secondary hover:bg-card-secondary'}`}
+                            >
+                                {t('darkMode')}
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>

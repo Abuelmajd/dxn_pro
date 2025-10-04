@@ -1,5 +1,3 @@
-
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
@@ -8,8 +6,8 @@ import { Order, Customer } from '../types';
 const OrderDetails: React.FC<{ order: Order }> = ({ order }) => {
     const { t, formatCurrency, formatNumber } = useAppContext();
     return (
-    <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
-        <div className="grid grid-cols-5 gap-4 pb-2 mb-2 border-b border-slate-200 dark:border-slate-600 text-sm font-medium text-slate-500 dark:text-slate-400">
+    <div className="mt-6 pt-4 border-t border-border">
+        <div className="grid grid-cols-5 gap-4 pb-2 mb-2 border-b border-border text-sm font-medium text-text-secondary">
             <div className="col-span-2">{t('product')}</div>
             <div className="text-center">{t('unitPrice')}</div>
             <div className="text-center">{t('quantity')}</div>
@@ -19,17 +17,17 @@ const OrderDetails: React.FC<{ order: Order }> = ({ order }) => {
         <ul className="space-y-3">
             {order.items.map(item => (
                 <li key={item.productId} className="grid grid-cols-5 gap-4 items-center text-sm">
-                    <div className="col-span-2 font-medium text-slate-800 dark:text-slate-200">{item.name}</div>
-                    <div className="text-center text-slate-600 dark:text-slate-400">{formatCurrency(item.price)}</div>
-                    <div className="text-center text-slate-600 dark:text-slate-400">×{formatNumber(item.quantity)}</div>
-                    <div className="text-end font-semibold text-slate-800 dark:text-slate-200">{formatCurrency(item.price * item.quantity)}</div>
+                    <div className="col-span-2 font-medium text-text-primary">{item.name}</div>
+                    <div className="text-center text-text-secondary">{formatCurrency(item.price)}</div>
+                    <div className="text-center text-text-secondary">×{formatNumber(item.quantity)}</div>
+                    <div className="text-end font-semibold text-text-primary">{formatCurrency(item.price * item.quantity)}</div>
                 </li>
             ))}
         </ul>
 
-        <div className="mt-6 pt-4 border-t border-slate-300 dark:border-slate-600 flex justify-end">
+        <div className="mt-6 pt-4 border-t border-border/80 flex justify-end">
             <div className="w-full max-w-xs space-y-2">
-                 <div className="flex justify-between font-bold text-lg text-slate-800 dark:text-white">
+                 <div className="flex justify-between font-bold text-lg text-text-primary">
                     <span>{t('grandTotal')}:</span>
                     <span>{formatCurrency(order.totalPrice)}</span>
                 </div>
@@ -144,9 +142,9 @@ const CustomerDetailsPage: React.FC = () => {
 
     if (!customer) {
         return (
-             <div className="text-center py-20 bg-white dark:bg-slate-800 rounded-xl shadow-lg">
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-white">{t('customerNotFound')}</h2>
-                <Link to="/admin/customers" className="mt-4 inline-block text-green-600 dark:text-green-400 hover:underline">
+             <div className="text-center py-20 bg-card rounded-xl shadow-lg">
+                <h2 className="text-2xl font-bold text-text-primary">{t('customerNotFound')}</h2>
+                <Link to="/admin/customers" className="mt-4 inline-block text-accent hover:underline">
                     {t('backToCustomers')}
                 </Link>
             </div>
@@ -156,35 +154,35 @@ const CustomerDetailsPage: React.FC = () => {
     return (
         <div className="max-w-4xl mx-auto">
              <div className="mb-6">
-                <Link to="/admin/customers" className="text-sm text-green-600 dark:text-green-400 hover:underline flex items-center gap-2 mb-4">
+                <Link to="/admin/customers" className="text-sm text-accent hover:underline flex items-center gap-2 mb-4">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
                     {t('backToCustomers')}
                 </Link>
-                <h1 className="text-3xl font-bold text-slate-800 dark:text-white">{customer.name}</h1>
-                <p className="mt-1 text-slate-500 dark:text-slate-400">{t('customerDetails')}</p>
+                <h1 className="text-3xl font-bold text-text-primary">{customer.name}</h1>
+                <p className="mt-1 text-text-secondary">{t('customerDetails')}</p>
              </div>
 
-             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-8 space-y-3">
+             <div className="bg-card rounded-xl shadow-lg p-6 mb-8 space-y-3">
                 {customer.phone && (
-                    <a href={`tel:${customer.phone}`} className="flex items-center gap-3 text-slate-600 dark:text-slate-300 hover:text-green-600 dark:hover:text-green-400 transition-colors font-medium">
+                    <a href={`tel:${customer.phone}`} className="flex items-center gap-3 text-text-primary hover:text-accent transition-colors font-medium">
                         <PhoneIcon />
                         <span>{customer.phone}</span>
                     </a>
                 )}
                 {customer.whatsapp && (
-                    <a href={formatWhatsAppLink(customer.whatsapp)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-green-600 dark:text-green-400 hover:text-green-500 dark:hover:text-green-300 transition-colors font-medium">
+                    <a href={formatWhatsAppLink(customer.whatsapp)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-green-500 hover:text-green-400 transition-colors font-medium">
                         <WhatsAppIcon />
                         <span>{t('contactViaWhatsapp')}</span>
                     </a>
                 )}
                  {customer.email && (
-                    <a href={`mailto:${customer.email}`} className="flex items-center gap-3 text-slate-600 dark:text-slate-300 hover:text-green-600 dark:hover:text-green-400 transition-colors font-medium">
+                    <a href={`mailto:${customer.email}`} className="flex items-center gap-3 text-text-primary hover:text-accent transition-colors font-medium">
                         <EmailIcon />
                         <span>{customer.email}</span>
                     </a>
                  )}
                  {customer.address && (
-                    <div className="flex items-start gap-3 text-slate-600 dark:text-slate-400">
+                    <div className="flex items-start gap-3 text-text-secondary">
                         <LocationIcon />
                         <span>{customer.address}</span>
                     </div>
@@ -192,25 +190,25 @@ const CustomerDetailsPage: React.FC = () => {
              </div>
 
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-white">{t('invoicesFor')} {customer.name}</h2>
+                <h2 className="text-2xl font-bold text-text-primary">{t('invoicesFor')} {customer.name}</h2>
             </div>
 
             {customerOrders.length === 0 ? (
-                 <div className="text-center py-20 bg-white dark:bg-slate-800 rounded-xl shadow-lg">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-16 w-16 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <div className="text-center py-20 bg-card rounded-xl shadow-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-16 w-16 text-text-secondary/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <h3 className="mt-4 text-lg font-medium text-slate-800 dark:text-white">{t('noInvoicesForCustomer')}</h3>
+                    <h3 className="mt-4 text-lg font-medium text-text-primary">{t('noInvoicesForCustomer')}</h3>
                 </div>
             ) : (
                 <div className="space-y-4">
                     {customerOrders.map(order => (
-                        <div key={order.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden">
+                        <div key={order.id} className="bg-card rounded-xl shadow-lg overflow-hidden">
                             <details className="p-4 group" open={customerOrders.length === 1}>
                                 <summary className="flex justify-between items-center cursor-pointer list-none">
                                     <div>
-                                        <p className="font-semibold">{t('invoiceNo')}: {order.id.slice(-6)}</p>
-                                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                                        <p className="font-semibold text-text-primary">{t('invoiceNo')}: {order.id.slice(-6)}</p>
+                                        <p className="text-sm text-text-secondary">
                                             {formatDate(order.createdAt)}
                                         </p>
                                     </div>
@@ -222,21 +220,21 @@ const CustomerDetailsPage: React.FC = () => {
                                                     e.stopPropagation(); 
                                                     setActiveShareMenu(activeShareMenu === order.id ? null : order.id);
                                                 }} 
-                                                className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors"
+                                                className="p-2 rounded-full hover:bg-card-secondary text-text-secondary transition-colors"
                                                 title={t('shareInvoice')}
                                             >
                                                 <ShareIcon />
                                             </button>
                                             {activeShareMenu === order.id && (
                                                 <div 
-                                                    className="absolute end-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-md shadow-lg z-20 border border-slate-200 dark:border-slate-700"
+                                                    className="absolute end-0 mt-2 w-56 bg-background rounded-md shadow-lg z-20 border border-card"
                                                     onClick={(e) => { e.stopPropagation(); }}
                                                 >
                                                     <ul className="py-1">
                                                         <li>
                                                             <button 
                                                                 onClick={() => handleShare('whatsapp', order, customer)}
-                                                                className="w-full text-start px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-3"
+                                                                className="w-full text-start px-4 py-2 text-sm text-text-primary hover:bg-card-secondary flex items-center gap-3"
                                                             >
                                                                 <WhatsAppIcon /> {t('shareViaWhatsapp')}
                                                             </button>
@@ -244,7 +242,7 @@ const CustomerDetailsPage: React.FC = () => {
                                                         <li>
                                                             <button 
                                                                 onClick={() => handleShare('email', order, customer)}
-                                                                className="w-full text-start px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-3"
+                                                                className="w-full text-start px-4 py-2 text-sm text-text-primary hover:bg-card-secondary flex items-center gap-3"
                                                             >
                                                                 <EmailIcon /> {t('shareViaEmail')}
                                                             </button>
@@ -253,8 +251,8 @@ const CustomerDetailsPage: React.FC = () => {
                                                 </div>
                                             )}
                                         </div>
-                                        <span className="font-bold text-lg text-slate-700 dark:text-slate-300">{formatCurrency(order.totalPrice)}</span>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-500 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <span className="font-bold text-lg text-text-primary">{formatCurrency(order.totalPrice)}</span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-text-secondary group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                         </svg>
                                     </div>

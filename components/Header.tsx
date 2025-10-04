@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
+import ThemeToggle from './ThemeToggle';
 
 const DxnLogo = () => (
     <img 
@@ -68,15 +69,15 @@ const Header: React.FC = () => {
   const navLinkClass = ({ isActive }: { isActive: boolean }): string =>
     `px-3 py-2 rounded-md text-sm font-medium transition-colors relative ${
       isActive
-        ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-white'
-        : 'text-slate-500 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700'
+        ? 'bg-primary text-white'
+        : 'text-text-primary hover:bg-card-secondary'
     }`;
     
   const mobileNavLinkClass = ({ isActive }: { isActive: boolean }): string =>
     `block w-full text-start px-4 py-3 rounded-md text-base font-medium transition-colors ${
       isActive
-        ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-200'
-        : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+        ? 'bg-primary/20 text-primary'
+        : 'text-text-primary hover:bg-card-secondary'
     }`;
 
   const renderNavLinks = (isMobile = false) => {
@@ -105,15 +106,15 @@ const Header: React.FC = () => {
 
   return (
     <>
-      <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg shadow-sm sticky top-0 z-50 border-b border-slate-200 dark:border-slate-800">
+      <header className="bg-card/80 backdrop-blur-lg shadow-sm sticky top-0 z-50 border-b border-border">
         <nav className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
               <NavLink to="/admin" className="flex-shrink-0">
                 <DxnLogo />
               </NavLink>
-              <div className="ms-4 border-s border-slate-300 dark:border-slate-700 ps-4 hidden md:block">
-                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              <div className="ms-4 border-s border-border ps-4 hidden md:block">
+                <span className="text-sm font-medium text-text-secondary">
                   {isRateLoading ? `${t('exchangeRate')}: ...` : `${t('exchangeRate')}: $1 = ${formatNumber(exchangeRate)}${settings.currency.symbol}`}
                 </span>
               </div>
@@ -122,23 +123,24 @@ const Header: React.FC = () => {
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center space-s-4">
               {renderNavLinks(false)}
-              <NavLink to="/admin/new-order" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+              <NavLink to="/admin/new-order" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
                 {t('newInvoice')}
               </NavLink>
-              <NavLink to="/admin/setup-check" title={t('setupCheck')} className="text-slate-500 hover:text-green-600 transition-colors p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">
+              <ThemeToggle className="text-text-primary hover:text-accent transition-colors p-2 rounded-full hover:bg-card-secondary" />
+              <NavLink to="/admin/setup-check" title={t('setupCheck')} className="text-text-primary hover:text-accent transition-colors p-2 rounded-full hover:bg-card-secondary">
                 <ChecklistIcon />
               </NavLink>
-              <NavLink to="/admin/settings" title={t('settings')} className="text-slate-500 hover:text-green-600 transition-colors p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">
+              <NavLink to="/admin/settings" title={t('settings')} className="text-text-primary hover:text-accent transition-colors p-2 rounded-full hover:bg-card-secondary">
                 <SettingsIcon />
               </NavLink>
-              <button onClick={handleLogout} title={t('logout')} className="text-slate-500 hover:text-red-600 transition-colors p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">
+              <button onClick={handleLogout} title={t('logout')} className="text-text-primary hover:text-red-600 transition-colors p-2 rounded-full hover:bg-card-secondary">
                 <LogoutIcon />
               </button>
             </div>
             
             {/* Mobile Menu Button */}
             <div className="md:hidden">
-                <button onClick={() => setIsMenuOpen(true)} className="text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white p-2 rounded-md">
+                <button onClick={() => setIsMenuOpen(true)} className="text-text-primary p-2 rounded-md">
                     <span className="sr-only">{t('menu')}</span>
                     <MenuIcon />
                 </button>
@@ -150,10 +152,10 @@ const Header: React.FC = () => {
       {/* Mobile Menu */}
       <div className={`fixed inset-0 z-[100] md:hidden transition-opacity ${isMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="absolute inset-0 bg-black/50" onClick={() => setIsMenuOpen(false)}></div>
-        <div className={`absolute top-0 bottom-0 w-64 bg-slate-50 dark:bg-slate-800 shadow-xl transition-transform duration-300 ease-in-out ${isRTL ? 'right-0' : 'left-0'} ${isMenuOpen ? 'translate-x-0' : (isRTL ? 'translate-x-full' : '-translate-x-full')}`}>
-            <div className="flex justify-between items-center p-4 border-b border-slate-200 dark:border-slate-700">
-                <span className="font-bold text-lg text-slate-800 dark:text-slate-100">{t('menuTitle')}</span>
-                <button onClick={() => setIsMenuOpen(false)} className="p-2 text-slate-600 dark:text-slate-300">
+        <div className={`absolute top-0 bottom-0 w-64 bg-card shadow-xl transition-transform duration-300 ease-in-out ${isRTL ? 'right-0' : 'left-0'} ${isMenuOpen ? 'translate-x-0' : (isRTL ? 'translate-x-full' : '-translate-x-full')}`}>
+            <div className="flex justify-between items-center p-4 border-b border-border">
+                <span className="font-bold text-lg text-text-primary">{t('menuTitle')}</span>
+                <button onClick={() => setIsMenuOpen(false)} className="p-2 text-text-primary">
                     <XIcon />
                 </button>
             </div>
@@ -162,21 +164,24 @@ const Header: React.FC = () => {
                     {renderNavLinks(true)}
                 </nav>
                 <div className="p-4 space-y-2">
-                    <NavLink to="/admin/new-order" onClick={() => setIsMenuOpen(false)} className="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                    <NavLink to="/admin/new-order" onClick={() => setIsMenuOpen(false)} className="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary-hover">
                         {t('newInvoice')}
                     </NavLink>
                 </div>
-                <div className="p-4 mt-4 border-t border-slate-200 dark:border-slate-700 space-y-2">
-                    <NavLink to="/admin/setup-check" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 p-3 rounded-md">
+                <div className="p-4 mt-4 border-t border-border space-y-2">
+                    <NavLink to="/admin/setup-check" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 text-text-primary hover:bg-card-secondary p-3 rounded-md">
                         <ChecklistIcon /> <span>{t('setupCheck')}</span>
                     </NavLink>
-                    <NavLink to="/admin/settings" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 p-3 rounded-md">
+                    <NavLink to="/admin/settings" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 text-text-primary hover:bg-card-secondary p-3 rounded-md">
                         <SettingsIcon /> <span>{t('settings')}</span>
                     </NavLink>
-                     <button onClick={handleLogout} className="w-full flex items-center gap-3 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 p-3 rounded-md">
+                     <button onClick={handleLogout} className="w-full flex items-center gap-3 text-text-primary hover:bg-card-secondary p-3 rounded-md">
                         <LogoutIcon /> <span>{t('logout')}</span>
                     </button>
                 </div>
+                 <div className="p-4 mt-4 border-t border-border">
+                    <ThemeToggle className="text-text-primary hover:text-accent hover:bg-card-secondary w-full flex justify-center"/>
+                 </div>
             </div>
         </div>
       </div>

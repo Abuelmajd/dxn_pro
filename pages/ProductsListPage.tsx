@@ -1,6 +1,4 @@
-
-
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Link } from 'react-router-dom';
 
@@ -32,32 +30,82 @@ const EyeOffIcon = () => (
 
 
 const ProductsListPage: React.FC = () => {
-    const { products, t, formatCurrency, formatNumber, getCategoryNameById, deleteProduct, toggleProductAvailability, isUpdating } = useAppContext();
+    const { products, categories, t, formatCurrency, formatNumber, getCategoryNameById, deleteProduct, toggleProductAvailability, isUpdating } = useAppContext();
+    
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedCategoryId, setSelectedCategoryId] = useState('');
+    const [selectedStatus, setSelectedStatus] = useState(''); // '', 'available', 'unavailable'
+
 
     const handleDelete = async (productId: string) => {
         if (window.confirm(t('confirmDeleteProduct'))) {
-            await deleteProduct(productId);
+            const result = await deleteProduct(productId);
+            if (!result.success) {
+                alert(result.error || "فشل حذف المنتج. يرجى المحاولة مرة أخرى.");
+            }
         }
     };
+
+    const filteredProducts = useMemo(() => {
+        return products.filter(product => {
+            const nameMatch = String(product.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+            const categoryMatch = !selectedCategoryId || product.categoryId === selectedCategoryId;
+            const statusMatch = selectedStatus === '' ||
+                                (selectedStatus === 'available' && (product.isAvailable ?? true)) ||
+                                (selectedStatus === 'unavailable' && !(product.isAvailable ?? true));
+            return nameMatch && categoryMatch && statusMatch;
+        });
+    }, [products, searchTerm, selectedCategoryId, selectedStatus]);
+
 
     return (
         <div className="max-w-6xl mx-auto">
             <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-slate-800 dark:text-white">{t('productList')}</h1>
-                    <p className="mt-1 text-slate-500 dark:text-slate-400">{t('productListDescription')}</p>
+                    <h1 className="text-3xl font-bold text-text-primary">{t('productList')}</h1>
+                    <p className="mt-1 text-text-secondary">{t('productListDescription')}</p>
                 </div>
-                 <Link to="/admin/add-product" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                 <Link to="/admin/add-product" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
                     {t('addNewProduct')}
                   </Link>
             </div>
+            
+            <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <input
+                    type="text"
+                    placeholder={t('searchForProduct')}
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="p-3 bg-card rounded-lg shadow-sm border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
+                />
+                <select
+                    value={selectedCategoryId}
+                    onChange={e => setSelectedCategoryId(e.target.value)}
+                    className="p-3 bg-card rounded-lg shadow-sm border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
+                >
+                    <option value="">{t('allCategories')}</option>
+                    {categories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                </select>
+                <select
+                    value={selectedStatus}
+                    onChange={e => setSelectedStatus(e.target.value)}
+                    className="p-3 bg-card rounded-lg shadow-sm border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
+                >
+                    <option value="">{t('allStatuses')}</option>
+                    <option value="available">{t('available')}</option>
+                    <option value="unavailable">{t('unavailable')}</option>
+                </select>
+            </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden">
+            <div className="bg-card rounded-xl shadow-lg overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-slate-500 dark:text-slate-400">
-                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
+                    <table className="w-full text-sm text-text-secondary">
+                        <thead className="text-xs text-text-primary uppercase bg-card-secondary">
                             <tr>
-                                <th scope="col" className="px-6 py-3 min-w-[80px]">{t('image')}</th>
+                                {/* FIX: Argument of type '"image"' is not assignable to parameter of type 'TranslationKeys'. Use 'productImage' instead. */}
+                                <th scope="col" className="px-6 py-3 min-w-[80px]">{t('productImage')}</th>
                                 <th scope="col" className="px-6 py-3 min-w-[200px] text-right">{t('productName')}</th>
                                 <th scope="col" className="px-6 py-3 text-center">{t('normalPrice')}</th>
                                 <th scope="col" className="px-6 py-3 text-center">{t('memberPrice')}</th>
@@ -66,29 +114,29 @@ const ProductsListPage: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {products.length > 0 ? (
-                                products.map(product => {
+                            {filteredProducts.length > 0 ? (
+                                filteredProducts.map(product => {
                                     const isAvailable = product.isAvailable ?? true;
                                     return (
                                         <tr 
                                             key={product.id} 
-                                            className={`bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600/30 transition-opacity ${!isAvailable ? 'opacity-50' : ''}`}
+                                            className={`border-b border-border hover:bg-card-secondary transition-opacity ${!isAvailable ? 'opacity-50' : ''}`}
                                         >
                                             <td className="px-6 py-4">
-                                                <img src={product.imageUrl} alt={product.name} className="h-12 w-12 rounded-md object-contain bg-slate-100 dark:bg-slate-700"/>
+                                                <img src={product.imageUrl} alt={product.name} className="h-12 w-12 rounded-md object-contain bg-background/50"/>
                                             </td>
-                                            <th scope="row" className="px-6 py-4 font-bold text-slate-900 dark:text-white whitespace-nowrap text-right">
+                                            <th scope="row" className="px-6 py-4 font-bold text-text-primary whitespace-nowrap text-right">
                                                 {product.name}
-                                                {!isAvailable && <span className="ms-2 text-xs font-semibold text-red-500 bg-red-100 dark:bg-red-900/50 px-2 py-0.5 rounded-full">{t('unavailable')}</span>}
-                                                <p className="font-normal text-slate-500 dark:text-slate-400">{getCategoryNameById(product.categoryId)}</p>
+                                                {!isAvailable && <span className="ms-2 text-xs font-semibold text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t('unavailable')}</span>}
+                                                <p className="font-normal text-text-secondary">{getCategoryNameById(product.categoryId)}</p>
                                             </th>
-                                            <td className="px-6 py-4 text-center font-semibold text-slate-600 dark:text-slate-400">
+                                            <td className="px-6 py-4 text-center font-semibold text-text-secondary">
                                                 {formatCurrency(product.price)}
                                             </td>
-                                            <td className="px-6 py-4 text-center font-bold text-amber-500 dark:text-amber-400">
+                                            <td className="px-6 py-4 text-center font-bold text-accent">
                                                 {formatCurrency(product.memberPrice)}
                                             </td>
-                                            <td className="px-6 py-4 text-center font-bold text-blue-600 dark:text-blue-400">
+                                            <td className="px-6 py-4 text-center font-bold text-accent">
                                                 {formatNumber(product.points)}
                                             </td>
                                             <td className="px-6 py-4 text-right">
@@ -97,14 +145,14 @@ const ProductsListPage: React.FC = () => {
                                                         onClick={() => toggleProductAvailability(product.id)}
                                                         disabled={isUpdating}
                                                         title={isAvailable ? t('markUnavailable') : t('markAvailable')}
-                                                        className="p-2 rounded-full text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-200 transition-colors disabled:opacity-50"
+                                                        className="p-2 rounded-full text-text-secondary hover:bg-card-secondary hover:text-text-primary transition-colors disabled:opacity-50"
                                                     >
                                                         {isAvailable ? <EyeIcon /> : <EyeOffIcon />}
                                                     </button>
                                                     <Link
                                                         to={`/admin/products/${product.id}/edit`}
                                                         title={t('edit')}
-                                                        className="p-2 rounded-full text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-green-600 dark:hover:text-green-400 transition-colors"
+                                                        className="p-2 rounded-full text-text-secondary hover:bg-card-secondary hover:text-accent transition-colors"
                                                     >
                                                         <PencilIcon />
                                                     </Link>
@@ -112,7 +160,7 @@ const ProductsListPage: React.FC = () => {
                                                         onClick={() => handleDelete(product.id)} 
                                                         disabled={isUpdating}
                                                         title={t('delete')}
-                                                        className="p-2 rounded-full text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+                                                        className="p-2 rounded-full text-text-secondary hover:bg-card-secondary hover:text-red-400 transition-colors disabled:opacity-50"
                                                     >
                                                         <TrashIcon />
                                                     </button>
@@ -124,7 +172,7 @@ const ProductsListPage: React.FC = () => {
                             ) : (
                                 <tr>
                                     <td colSpan={6} className="text-center py-16">
-                                        <p className="text-slate-500 dark:text-slate-400">{t('noProducts')}</p>
+                                        <p className="text-text-secondary">{t('noProducts')}</p>
                                     </td>
                                 </tr>
                             )}
