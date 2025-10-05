@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Link } from 'react-router-dom';
+import { Customer } from '../types';
 
 const PhoneIcon: React.FC = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -26,9 +27,75 @@ const UserCircleIcon: React.FC = () => (
     </svg>
 );
 
+const TrashIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+);
+
+const ConfirmationModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: string;
+}> = ({ isOpen, onClose, onConfirm, title, message }) => {
+  const { t } = useAppContext();
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = 'auto';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black bg-opacity-60 z-[100] flex justify-center items-center p-4"
+      aria-labelledby="confirmation-modal-title"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card rounded-xl shadow-2xl p-6 w-full max-w-md transform transition-all"
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 id="confirmation-modal-title" className="text-xl font-bold text-text-primary">{title}</h3>
+        <p className="text-text-secondary mt-4 whitespace-pre-wrap">{message}</p>
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-md font-semibold bg-card-secondary text-text-primary hover:bg-border transition-colors"
+          >
+            {t('cancel')}
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 rounded-md font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors"
+          >
+            {t('delete')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 const CustomersPage: React.FC = () => {
-    const { customers, orders, t, formatCurrency, formatNumber } = useAppContext();
+    const { customers, orders, t, formatCurrency, formatInteger, deleteCustomer, isUpdating } = useAppContext();
+    const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
 
     const customerStats = useMemo(() => {
         const stats = new Map<string, { totalSpent: number; invoiceCount: number }>();
@@ -41,10 +108,23 @@ const CustomersPage: React.FC = () => {
         return stats;
     }, [orders]);
 
-
     const formatWhatsAppLink = (number: string) => {
         const cleaned = String(number).replace(/\D/g, '');
         return `https://wa.me/${cleaned}`;
+    };
+
+    const handleDeleteRequest = (customer: Customer) => {
+        setCustomerToDelete(customer);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!customerToDelete) return;
+        await deleteCustomer(customerToDelete.id);
+        setCustomerToDelete(null);
+    };
+
+    const handleCancelDelete = () => {
+        setCustomerToDelete(null);
     };
 
     return (
@@ -67,54 +147,70 @@ const CustomersPage: React.FC = () => {
                     {customers.map(customer => {
                         const stats = customerStats.get(customer.id) || { totalSpent: 0, invoiceCount: 0 };
                         return (
-                            <Link 
-                                to={`/admin/customers/${customer.id}`} 
-                                key={customer.id} 
-                                className="bg-card/60 backdrop-blur-sm rounded-xl shadow-lg p-6 flex flex-col space-y-4 transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 group"
-                            >
-                                <div className="flex items-center gap-4">
-                                    <div className="bg-card-secondary p-2 rounded-full">
-                                        <UserCircleIcon />
-                                    </div>
-                                    <h2 className="text-xl font-bold text-text-primary truncate group-hover:text-accent transition-colors">{customer.name}</h2>
-                                </div>
-                                
-                                <div className="space-y-3 text-sm flex-grow">
-                                     <div className="flex justify-between items-center text-sm font-medium">
-                                        <span className="text-text-secondary">{t('totalInvoices')}</span>
-                                        <span className="font-bold text-text-primary">{formatNumber(stats.invoiceCount)}</span>
-                                     </div>
-                                      <div className="flex justify-between items-center text-sm font-medium">
-                                        <span className="text-text-secondary">{t('totalSpent')}</span>
-                                        <span className="font-bold text-accent">{formatCurrency(stats.totalSpent)}</span>
-                                     </div>
-                                </div>
-
-                                <div className="flex flex-col space-y-3 pt-4 border-t border-border mt-auto">
-                                    {customer.address && (
-                                        <div className="flex items-start gap-3 text-text-secondary">
-                                            <LocationIcon />
-                                            <span>{customer.address}</span>
+                            <div key={customer.id} className="relative group">
+                                <Link 
+                                    to={`/admin/customers/${customer.id}`} 
+                                    className="bg-card/60 backdrop-blur-sm rounded-xl shadow-lg p-6 flex flex-col space-y-4 transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 h-full"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="bg-card-secondary p-2 rounded-full">
+                                            <UserCircleIcon />
                                         </div>
-                                    )}
-                                    {customer.phone && (
-                                        <a href={`tel:${customer.phone}`} onClick={e => e.stopPropagation()} className="flex items-center gap-3 text-text-primary hover:text-accent transition-colors font-medium">
-                                            <PhoneIcon />
-                                            <span>{customer.phone}</span>
-                                        </a>
-                                    )}
-                                    {customer.whatsapp && (
-                                        <a href={formatWhatsAppLink(customer.whatsapp)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="flex items-center gap-3 text-green-500 hover:text-green-400 transition-colors font-medium">
-                                            <WhatsAppIcon />
-                                            <span>{t('contactViaWhatsapp')}</span>
-                                        </a>
-                                    )}
-                                </div>
-                            </Link>
+                                        <h2 className="text-xl font-bold text-text-primary truncate group-hover:text-accent transition-colors">{customer.name}</h2>
+                                    </div>
+                                    
+                                    <div className="space-y-3 text-sm flex-grow">
+                                        <div className="flex justify-between items-center text-sm font-medium">
+                                            <span className="text-text-secondary">{t('totalInvoices')}</span>
+                                            <span className="font-bold text-text-primary">{formatInteger(stats.invoiceCount)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm font-medium">
+                                            <span className="text-text-secondary">{t('totalSpent')}</span>
+                                            <span className="font-bold text-accent">{formatCurrency(stats.totalSpent)}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col space-y-3 pt-4 border-t border-border mt-auto">
+                                        {customer.address && (
+                                            <div className="flex items-start gap-3 text-text-secondary">
+                                                <LocationIcon />
+                                                <span>{customer.address}</span>
+                                            </div>
+                                        )}
+                                        {customer.phone && (
+                                            <a href={`tel:${customer.phone}`} onClick={e => e.stopPropagation()} className="flex items-center gap-3 text-text-primary hover:text-accent transition-colors font-medium">
+                                                <PhoneIcon />
+                                                <span>{customer.phone}</span>
+                                            </a>
+                                        )}
+                                        {customer.whatsapp && (
+                                            <a href={formatWhatsAppLink(customer.whatsapp)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="flex items-center gap-3 text-green-500 hover:text-green-400 transition-colors font-medium">
+                                                <WhatsAppIcon />
+                                                <span>{t('contactViaWhatsapp')}</span>
+                                            </a>
+                                        )}
+                                    </div>
+                                </Link>
+                                <button
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteRequest(customer); }}
+                                    className="absolute top-4 right-4 rtl:right-auto rtl:left-4 p-2 rounded-full bg-card/50 backdrop-blur-sm text-text-secondary hover:bg-red-500/20 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:opacity-50"
+                                    title={t('deleteCustomer')}
+                                    disabled={isUpdating}
+                                >
+                                    <TrashIcon />
+                                </button>
+                            </div>
                         );
                     })}
                 </div>
             )}
+            <ConfirmationModal 
+                isOpen={!!customerToDelete}
+                onClose={handleCancelDelete}
+                onConfirm={handleConfirmDelete}
+                title={t('confirmDeletionTitle')}
+                message={t('confirmDeleteCustomer')}
+            />
         </div>
     );
 };

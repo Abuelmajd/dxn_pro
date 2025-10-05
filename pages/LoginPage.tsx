@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 
 const DxnLogo = () => (
     <img 
-        src="https://github.com/Abuelmajd/DXN/blob/16947febcb04734eaed7e2f1d98c76d7cc4e8046/logo.png?raw=true"
+        src="https://lh3.googleusercontent.com/d/1JVW882aiQIHcc91tEhn9_fOjRSOJFkS8"
         alt="DXN App Logo"
         className="h-16 w-auto mx-auto"
     />

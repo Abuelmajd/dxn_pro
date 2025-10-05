@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import React, { createContext, useState, useContext, ReactNode, useEffect, useMemo } from 'react';
 import { Product, Order, CartItem, Customer, AppSettings, Language, NumberFormat, Currency, Expense, CustomerSelection, Category, HealthCheckResult } from '../types';
 import { translations, TranslationKeys } from '../translations';
 
@@ -38,12 +38,15 @@ interface AppContextType {
   t: (key: TranslationKeys) => string;
   formatCurrency: (amount: number) => string;
   formatNumber: (num: number) => string;
+  formatInteger: (num: number) => string;
   formatDate: (date: Date) => string;
   addOrder: (customerData: Omit<Customer, 'id'>, items: CartItem[]) => Promise<boolean>;
   addProduct: (productData: AddProductData) => Promise<boolean>;
   updateProduct: (productData: Product) => Promise<boolean>;
   deleteProduct: (productId: string) => Promise<{ success: boolean; error?: string }>;
   toggleProductAvailability: (productId: string) => Promise<boolean>;
+  deleteOrder: (orderId: string) => Promise<boolean>;
+  deleteCustomer: (customerId: string) => Promise<boolean>;
   addExpense: (expenseData: Omit<Expense, 'id' | 'date'> & { date: Date }) => Promise<boolean>;
   deleteExpense: (expenseId: string) => Promise<boolean>;
   addCustomerSelection: (selectionData: Omit<CustomerSelection, 'id' | 'createdAt' | 'status'>) => Promise<boolean>;
@@ -56,7 +59,6 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// FIX: Changed generic arrow function to a function declaration to avoid TSX parsing ambiguity.
 function loadLocalState<T>(key: string, defaultValue: T): T {
   try {
     const savedState = localStorage.getItem(key);
@@ -80,7 +82,6 @@ function loadLocalState<T>(key: string, defaultValue: T): T {
 const parseData = (data: any) => {
   if (!data) return { products: [], orders: [], customers: [], expenses: [], customerSelections: [], categories: [] };
 
-  // FIX: Changed generic arrow function to a function declaration to avoid TSX parsing ambiguity.
   function parseWithDates<T>(items: any[]): T[] {
     return items.map(item => ({
       ...item,
@@ -99,7 +100,6 @@ const parseData = (data: any) => {
   };
 };
 
-// FIX: Changed generic arrow function to a function declaration to avoid TSX parsing ambiguity.
 function saveLocalState<T>(key: string, value: T) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -109,7 +109,7 @@ function saveLocalState<T>(key: string, value: T) {
 };
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [rawProducts, setRawProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -120,8 +120,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     language: 'ar',
     currency: ILS_CURRENCY,
     numberFormat: 'ar',
-    // FIX: Add default theme to AppSettings.
     theme: 'dark',
+    profitMarginILS: 20,
   }));
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => loadLocalState('isAuthenticated', false));
@@ -130,6 +130,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
+
+  // Memoize products to dynamically apply the profit margin from settings
+  const products = useMemo(() => {
+    const profitMargin = settings.profitMarginILS || 0;
+    return rawProducts.map(p => ({
+      ...p,
+      // The price from the sheet is the base price. Add margin for display.
+      price: p.price + profitMargin,
+      memberPrice: p.memberPrice + profitMargin,
+    }));
+  }, [rawProducts, settings.profitMarginILS]);
 
   const callGoogleScript = async (action: string, payload?: any) => {
     setApiError(null);
@@ -166,7 +177,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const data = await callGoogleScript('getAllData');
     if (data) {
       const parsed = parseData(data);
-      setProducts(parsed.products);
+      setRawProducts(parsed.products);
       setOrders(parsed.orders);
       setCustomers(parsed.customers);
       setExpenses(parsed.expenses);
@@ -241,16 +252,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const formatNumber = (num: number): string => {
     if (settings.numberFormat === 'ar') {
-      return new Intl.NumberFormat('ar-EG').format(num);
+      return new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
     }
-    return new Intl.NumberFormat('en-US').format(num);
+    return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+  };
+
+  const formatInteger = (num: number): string => {
+    const options: Intl.NumberFormatOptions = {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    };
+    if (settings.numberFormat === 'ar') {
+        return new Intl.NumberFormat('ar-EG', options).format(num);
+    }
+    return new Intl.NumberFormat('en-US', options).format(num);
   };
 
   const formatCurrency = (amount: number): string => {
+    const roundedAmount = Math.round(amount * 10) / 10;
     if (settings.language === 'ar') {
-       return `${formatNumber(amount)} ${settings.currency.symbol}`;
+       return `${formatNumber(roundedAmount)} ${settings.currency.symbol}`;
     }
-    return `${settings.currency.symbol}${formatNumber(amount)}`;
+    return `${settings.currency.symbol}${formatNumber(roundedAmount)}`;
   };
   
   const formatDate = (date: Date): string => {
@@ -287,19 +310,53 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return handleGenericUpdate('updateProduct', productData, ['products']);
   };
 
-  const deleteProduct = async (productId: string) => {
+  const deleteProduct = async (productId: string): Promise<{ success: boolean; error?: string }> => {
     setIsUpdating(true);
-    const result = await callGoogleScript('deleteProduct', { productId });
-    if (result) {
-        await fetchData();
+    try {
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+            method: 'POST',
+            redirect: "follow",
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'deleteProduct', payload: { productId } }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            await fetchData(); // Refetch data on success
+            setIsUpdating(false);
+            return { success: true };
+        } else {
+            // This is a "soft" error from the backend (e.g., product in use).
+            setIsUpdating(false);
+            return { success: false, error: result.message };
+        }
+
+    } catch (error: any) {
+        // This is a "hard" network or parsing error.
+        console.error('Google Script API call failed for deleteProduct:', error);
+        setApiError(error.message || 'Failed to communicate with the server.');
+        setIsUpdating(false);
+        return { success: false, error: error.message };
     }
-    setIsUpdating(false);
-    return { success: !!result, error: result?.error };
   };
+
 
   const toggleProductAvailability = async (productId: string) => {
     return handleGenericUpdate('toggleProductAvailability', { productId }, ['products']);
   };
+
+  const deleteOrder = async (orderId: string) => {
+    return handleGenericUpdate('deleteOrder', { orderId }, ['orders']);
+  }
+
+  const deleteCustomer = async (customerId: string) => {
+    return handleGenericUpdate('deleteCustomer', { customerId }, ['customers', 'orders']);
+  }
 
   const addExpense = async (expenseData: Omit<Expense, 'id' | 'date'> & { date: Date }) => {
     return handleGenericUpdate('addExpense', expenseData, ['expenses']);
@@ -346,12 +403,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     t,
     formatCurrency,
     formatNumber,
+    formatInteger,
     formatDate,
     addOrder,
     addProduct,
     updateProduct,
     deleteProduct,
     toggleProductAvailability,
+    deleteOrder,
+    deleteCustomer,
     addExpense,
     deleteExpense,
     addCustomerSelection,

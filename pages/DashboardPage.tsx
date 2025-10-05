@@ -35,62 +35,67 @@ const ChartContainer: React.FC<{ title: string; children: React.ReactNode }> = (
     </div>
 );
 
-interface HorizontalBarChartProps {
-    data: { label: string; value: number }[];
-    valueFormatter: (value: number) => string;
-}
-
-const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({ data, valueFormatter }) => {
-    const { t } = useAppContext();
-    if (data.length === 0) {
-        return <div className="flex items-center justify-center h-full text-text-secondary">{t('noDataForPeriod')}</div>;
-    }
-    const maxValue = Math.max(...data.map(d => d.value), 1);
-    
-    return (
-        <div className="space-y-4">
-            {data.map(({ label, value }) => (
-                <div key={label} className="flex items-center gap-4 text-sm">
-                    <span className="w-1/3 truncate text-text-primary text-right">{label}</span>
-                    <div className="w-2/3 group relative">
-                        <div
-                            className="bg-primary/80 h-6 rounded-md transition-all duration-500 hover:bg-primary"
-                            style={{ width: `${(value / maxValue) * 100}%` }}
-                        ></div>
-                        <span className="absolute left-2 rtl:left-auto rtl:right-2 top-1/2 -translate-y-1/2 text-white font-bold text-xs">{valueFormatter(value)}</span>
-                    </div>
-                </div>
-            ))}
-        </div>
-    );
-};
-
 interface VerticalBarChartProps {
     data: { label: string; value: number }[];
     valueFormatter: (value: number) => string;
 }
 
 const VerticalBarChart: React.FC<VerticalBarChartProps> = ({ data, valueFormatter }) => {
-    const { t } = useAppContext();
-     if (data.every(d => d.value === 0)) {
+    const { t, formatInteger } = useAppContext();
+     if (data.length === 0) {
         return <div className="flex items-center justify-center h-full text-text-secondary">{t('noDataForPeriod')}</div>;
     }
-    const maxValue = Math.max(...data.map(d => d.value), 1);
+    
+    // Calculate Y-axis ticks
+    const maxValue = Math.max(...data.map(d => d.value), 0);
+    const numTicks = 5;
+    let effectiveMaxValue = 10;
+    let tickIncrement = 2;
 
+    if (maxValue > 0) {
+        const roughTick = maxValue / numTicks;
+        const magnitude = Math.pow(10, Math.floor(Math.log10(roughTick)));
+        const niceFractions = [magnitude, magnitude * 2, magnitude * 5, magnitude * 10];
+        tickIncrement = niceFractions.find(fraction => fraction >= roughTick) || magnitude * 10;
+        effectiveMaxValue = tickIncrement * numTicks;
+    }
+
+    const yAxisLabels = Array.from({ length: numTicks + 1 }, (_, i) => {
+        return (numTicks - i) * tickIncrement;
+    });
+    
     return (
-        <div className="flex justify-around items-end h-64 gap-2 pt-4">
-            {data.map(({ label, value }) => (
-                <div key={label} className="flex flex-col items-center flex-1 h-full justify-end group relative">
-                    <div className="absolute bottom-[calc(100%+0.5rem)] mb-2 w-max px-2 py-1 bg-card text-text-primary text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none transform -translate-x-1/2 left-1/2">
-                        {valueFormatter(value)}
+        <div className="flex h-72">
+            {/* Y-Axis Labels */}
+            <div className="flex flex-col justify-between text-xs text-text-secondary pr-4 text-right py-[10px] h-full box-border">
+                {yAxisLabels.map(label => (
+                    <span key={label}>{formatInteger(label)}</span>
+                ))}
+            </div>
+
+            {/* Chart Area */}
+            <div className="flex-grow flex justify-around items-end gap-2 border-l border-b border-border pl-4 relative">
+                {/* Grid lines */}
+                {yAxisLabels.slice(1).map(label => (
+                    <div key={`grid-${label}`} className="absolute left-0 w-full border-t border-border/50" style={{ bottom: `${(label / effectiveMaxValue) * 100}%` }}></div>
+                ))}
+                
+                {/* Bars */}
+                {data.map(({ label, value }) => (
+                    <div key={label} className="flex flex-col items-center w-full h-full justify-end group relative text-center">
+                        <div className="absolute -top-7 mb-1 w-max px-2 py-1 bg-card text-text-primary text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                            {valueFormatter(value)}
+                        </div>
+                        <div
+                            className="w-3/4 max-w-[40px] bg-primary rounded-t-md transition-all duration-300 hover:bg-primary-hover"
+                            style={{ height: value > 0 ? `${(value / effectiveMaxValue) * 100}%` : '0%' }}
+                        ></div>
+                        <span className="text-xs text-text-secondary mt-2 px-1 break-words w-full h-8 flex items-start justify-center">
+                            {label}
+                        </span>
                     </div>
-                    <div
-                        className="w-full max-w-[40px] bg-primary/80 rounded-t-md transition-all duration-500 hover:bg-primary"
-                        style={{ height: `${(value / maxValue) * 100}%` }}
-                    ></div>
-                    <span className="text-xs text-text-secondary mt-2">{label}</span>
-                </div>
-            ))}
+                ))}
+            </div>
         </div>
     );
 };
@@ -98,7 +103,7 @@ const VerticalBarChart: React.FC<VerticalBarChartProps> = ({ data, valueFormatte
 
 // Dashboard Page Component
 const DashboardPage: React.FC = () => {
-  const { orders, expenses, customers, t, formatCurrency, formatNumber, settings, getCustomerById } = useAppContext();
+  const { orders, expenses, customers, t, formatCurrency, formatNumber, settings, getCustomerById, formatInteger } = useAppContext();
 
   // --- Data Aggregation ---
   const totalSales = orders.reduce((sum, order) => sum + order.totalPrice, 0);
@@ -174,19 +179,19 @@ const DashboardPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title={t('totalSales')} value={formatCurrency(totalSales)} icon={<DollarSignIcon />} color="bg-gradient-to-br from-accent to-yellow-600" />
         <StatCard title={t('totalExpenses')} value={formatCurrency(totalExpenses)} icon={<TrendingDownIcon />} color="bg-gradient-to-br from-red-500 to-red-600" />
-        <StatCard title={t('ordersCount')} value={formatNumber(orders.length)} icon={<ClipboardListIcon />} color="bg-gradient-to-br from-primary to-primary-hover" />
+        <StatCard title={t('ordersCount')} value={formatInteger(orders.length)} icon={<ClipboardListIcon />} color="bg-gradient-to-br from-primary to-primary-hover" />
         <StatCard title={t('totalPointsThisMonth')} value={formatNumber(totalPointsThisMonth)} icon={<StarIcon />} color="bg-gradient-to-br from-teal-500 to-teal-600" />
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         <ChartContainer title={t('bestSellingProducts')}>
-            <HorizontalBarChart
+            <VerticalBarChart
                 data={bestSellingProducts}
-                valueFormatter={(value) => `${formatNumber(value)} ${t('quantitySold')}`}
+                valueFormatter={(value) => `${formatInteger(value)} ${t('quantitySold')}`}
             />
         </ChartContainer>
         <ChartContainer title={t('topCustomers')}>
-            <HorizontalBarChart
+            <VerticalBarChart
                 data={topCustomers}
                 valueFormatter={(value) => formatCurrency(value)}
             />

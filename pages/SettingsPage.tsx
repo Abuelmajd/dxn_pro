@@ -13,6 +13,13 @@ const SettingsPage: React.FC = () => {
         updateSettings({ numberFormat: e.target.value as NumberFormat });
     };
 
+    const handleProfitMarginChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = parseFloat(e.target.value);
+        if (!isNaN(value)) {
+            updateSettings({ profitMarginILS: value });
+        }
+    };
+
     const handleThemeChange = (theme: 'light' | 'dark') => {
         updateSettings({ theme });
     };
@@ -51,6 +58,24 @@ const SettingsPage: React.FC = () => {
                         { value: 'en', label: t('englishNumerals') },
                     ])}
                     
+                    <div>
+                        <label htmlFor="profitMargin" className="block text-sm font-medium text-text-primary mb-2">{t('profitMargin')}</label>
+                        <div className="relative">
+                            <input
+                                type="number"
+                                id="profitMargin"
+                                value={settings.profitMarginILS ?? 20}
+                                onChange={handleProfitMarginChange}
+                                className="w-full p-3 bg-input-bg rounded-lg border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
+                                step="1"
+                            />
+                            <div className="absolute inset-y-0 end-0 pe-3 flex items-center pointer-events-none">
+                                <span className="text-text-secondary sm:text-sm">{settings.currency.symbol}</span>
+                            </div>
+                        </div>
+                        <p className="mt-2 text-xs text-text-secondary">{t('profitMarginDescription')}</p>
+                    </div>
+
                     <div>
                         <label className="block text-sm font-medium text-text-primary mb-2">{t('theme')}</label>
                         <div className="flex items-center gap-2 p-1 bg-input-bg rounded-lg border border-border">

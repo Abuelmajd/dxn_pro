@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { Order, Customer } from '../types';
 
 const OrderDetails: React.FC<{ order: Order }> = ({ order }) => {
-    const { t, formatCurrency, formatNumber } = useAppContext();
+    const { t, formatCurrency, formatInteger } = useAppContext();
     return (
     <div className="mt-6 pt-4 border-t border-border">
         <div className="grid grid-cols-5 gap-4 pb-2 mb-2 border-b border-border text-sm font-medium text-text-secondary">
@@ -19,7 +19,7 @@ const OrderDetails: React.FC<{ order: Order }> = ({ order }) => {
                 <li key={item.productId} className="grid grid-cols-5 gap-4 items-center text-sm">
                     <div className="col-span-2 font-medium text-text-primary">{item.name}</div>
                     <div className="text-center text-text-secondary">{formatCurrency(item.price)}</div>
-                    <div className="text-center text-text-secondary">×{formatNumber(item.quantity)}</div>
+                    <div className="text-center text-text-secondary">×{formatInteger(item.quantity)}</div>
                     <div className="text-end font-semibold text-text-primary">{formatCurrency(item.price * item.quantity)}</div>
                 </li>
             ))}
@@ -70,7 +70,7 @@ const EmailIcon = () => (
 
 const CustomerDetailsPage: React.FC = () => {
     const { customerId } = useParams<{ customerId: string }>();
-    const { getCustomerById, orders, t, formatDate, formatCurrency, formatNumber } = useAppContext();
+    const { getCustomerById, orders, t, formatDate, formatCurrency, formatInteger } = useAppContext();
     const [activeShareMenu, setActiveShareMenu] = useState<string | null>(null);
 
     const customer = useMemo(() => customerId ? getCustomerById(customerId) : undefined, [customerId, getCustomerById]);
@@ -112,7 +112,7 @@ const CustomerDetailsPage: React.FC = () => {
 
         const itemsText = order.items.map(item => 
             `${item.name}\n` +
-            `  ${formatNumber(item.quantity)} x ${formatCurrency(item.price)} = ${formatCurrency(item.price * item.quantity)}`
+            `  ${formatInteger(item.quantity)} x ${formatCurrency(item.price)} = ${formatCurrency(item.price * item.quantity)}`
         ).join('\n\n');
 
         const footer = `\n------------------------------------\n` +

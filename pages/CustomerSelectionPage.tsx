@@ -11,7 +11,7 @@ const ProductSelectionCard: React.FC<{
     quantityInCart: number,
     onUpdateQuantity: (productId: string, newQuantity: number) => void
 }> = ({ product, onViewDetails, quantityInCart, onUpdateQuantity }) => {
-    const { t, formatCurrency, getCategoryNameById, formatNumber } = useAppContext();
+    const { t, formatCurrency, getCategoryNameById, formatInteger } = useAppContext();
     return (
         <div className="bg-card rounded-lg shadow-md overflow-hidden transition-transform hover:scale-105 flex flex-col group">
             <button 
@@ -29,6 +29,7 @@ const ProductSelectionCard: React.FC<{
                     <p className="text-sm text-text-secondary">{getCategoryNameById(product.categoryId)}</p>
                 </button>
                 <div className="mt-4 flex-grow flex items-end">
+                    {/* The displayed price is the final ILS price, calculated according to the new pricing logic (USD + $0.50 -> ILS + 20 ILS + rounding) */}
                     <p className="text-xl font-semibold text-accent">{formatCurrency(product.price)}</p>
                 </div>
                  <div className="mt-4">
@@ -48,7 +49,7 @@ const ProductSelectionCard: React.FC<{
                             >
                                 −
                             </button>
-                            <span className="text-lg font-bold w-12 text-center text-text-primary" aria-live="polite">{formatNumber(quantityInCart)}</span>
+                            <span className="text-lg font-bold w-12 text-center text-text-primary" aria-live="polite">{formatInteger(quantityInCart)}</span>
                             <button 
                                 onClick={() => onUpdateQuantity(product.id, quantityInCart + 1)}
                                 className="h-10 w-10 flex items-center justify-center rounded-full bg-card-secondary text-text-primary hover:bg-border transition-colors font-bold text-2xl"
@@ -66,7 +67,7 @@ const ProductSelectionCard: React.FC<{
 
 
 const CustomerSelectionPage: React.FC = () => {    
-  const { products, categories, addCustomerSelection, t, formatCurrency, formatNumber, isUpdating } = useAppContext();
+  const { products, categories, addCustomerSelection, t, formatCurrency, formatInteger, isUpdating } = useAppContext();
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -112,7 +113,6 @@ const CustomerSelectionPage: React.FC = () => {
             name: productToAdd.name, 
             price: productToAdd.price, 
             quantity: quantity,
-            // FIX: Add missing 'points' property to satisfy the CartItem type.
             points: productToAdd.points || 0,
         }];
       } else if (existingItem && quantity <= 0) {
@@ -263,7 +263,7 @@ const CustomerSelectionPage: React.FC = () => {
         </div>
         <div className="text-center mb-8 mt-4">
             <img 
-                src="https://github.com/Abuelmajd/DXN/blob/16947febcb04734eaed7e2f1d98c76d7cc4e8046/logo.png?raw=true" 
+                src="https://lh3.googleusercontent.com/d/1JVW882aiQIHcc91tEhn9_fOjRSOJFkS8" 
                 alt="DXN App Logo" 
                 className="h-24 w-auto mx-auto mb-6"
             />
@@ -317,7 +317,7 @@ const CustomerSelectionPage: React.FC = () => {
                         </svg>
                         <div className="text-left rtl:text-right">
                             <div className="font-bold text-base sm:text-lg">{formatCurrency(totalPrice)}</div>
-                            <div className="text-xs sm:text-sm">{formatNumber(totalItems)} {t('products')}</div>
+                            <div className="text-xs sm:text-sm">{formatInteger(totalItems)} {t('products')}</div>
                         </div>
                         <div className="ps-2 hidden sm:block">
                            <span className="font-semibold">{t('proceedToCheckout')}</span>

@@ -140,6 +140,8 @@ function doPost(e) {
       case 'deleteProduct': return handleDeleteProduct(payload);
       case 'toggleProductAvailability': return handleToggleProductAvailability(payload);
       case 'addOrder': return handleAddOrder(payload);
+      case 'deleteOrder': return handleDeleteOrder(payload);
+      case 'deleteCustomer': return handleDeleteCustomer(payload);
       case 'addExpense': return handleAddExpense(payload);
       case 'deleteExpense': return handleDeleteExpense(payload);
       case 'addCustomerSelection': return handleAddCustomerSelection(payload);
@@ -214,21 +216,29 @@ function handleUpdateProduct(payload) {
 }
 
 function handleDeleteProduct(payload) {
-    if (!payload || !payload.productId) throw new Error("Product ID is missing.");
-    // Also delete the image from Drive if it exists
+    if (!payload || !payload.productId) {
+        throw new Error("Product ID is missing.");
+    }
+    const productId = payload.productId;
+
+    // Delete the image from Drive if it exists
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.PRODUCTS);
     const headers = getHeaders(sheet);
     const data = sheet.getDataRange().getValues();
     const idColumnIndex = headers.indexOf('id');
-    const rowIndex = data.findIndex(row => String(row[idColumnIndex]).trim() == String(payload.productId).trim());
+    const rowIndex = data.findIndex(row => String(row[idColumnIndex]).trim() == String(productId).trim());
+
     if (rowIndex > 0) {
         const productToDelete = mapRowToAnObject(data[rowIndex], headers);
         _deleteImageFromDrive(productToDelete.imageUrl);
     }
 
-    deleteRowById(SHEET_MAPPING.PRODUCTS, payload.productId);
+    // Delete the product row from the sheet
+    deleteRowById(SHEET_MAPPING.PRODUCTS, productId);
+    
     return createJsonResponse({ status: 'success' });
 }
+
 
 function handleToggleProductAvailability(payload) {
     const { productId } = payload;
@@ -300,6 +310,75 @@ function handleAddOrder(payload) {
     });
 
     return createJsonResponse({ status: 'success', data: { newOrder: { ...newOrder, items }, updatedCustomer: customer } });
+}
+
+function handleDeleteOrder(payload) {
+  const { orderId } = payload;
+  if (!orderId) throw new Error("Order ID is required to delete.");
+
+  // Delete associated order items first
+  const itemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDER_ITEMS);
+  const itemsHeaders = getHeaders(itemsSheet);
+  const itemsData = itemsSheet.getDataRange().getValues();
+  const orderIdColumnIndex = itemsHeaders.indexOf('orderId');
+
+  if (orderIdColumnIndex !== -1) {
+    // Iterate backwards to avoid issues with changing row indices after deletion
+    for (let i = itemsData.length - 1; i > 0; i--) {
+      if (String(itemsData[i][orderIdColumnIndex]).trim() === String(orderId).trim()) {
+        itemsSheet.deleteRow(i + 1);
+      }
+    }
+  }
+
+  // Delete the order itself
+  deleteRowById(SHEET_MAPPING.ORDERS, orderId);
+
+  return createJsonResponse({ status: 'success', data: { deletedOrderId: orderId } });
+}
+
+function handleDeleteCustomer(payload) {
+  const { customerId } = payload;
+  if (!customerId) throw new Error("Customer ID is required to delete.");
+  
+  // Find all orders for this customer
+  const ordersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDERS);
+  const ordersHeaders = getHeaders(ordersSheet);
+  const ordersData = ordersSheet.getDataRange().getValues();
+  const customerIdColumnIndex = ordersHeaders.indexOf('customerId');
+  const orderIdHeaderIndex = ordersHeaders.indexOf('id');
+  
+  const orderIdsToDelete = [];
+  if (customerIdColumnIndex !== -1 && orderIdHeaderIndex !== -1) {
+    for (let i = ordersData.length - 1; i > 0; i--) {
+      if (String(ordersData[i][customerIdColumnIndex]).trim() === String(customerId).trim()) {
+        orderIdsToDelete.push(String(ordersData[i][orderIdHeaderIndex]).trim());
+        ordersSheet.deleteRow(i + 1);
+      }
+    }
+  }
+
+  // Delete all associated order items
+  if (orderIdsToDelete.length > 0) {
+    const itemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDER_ITEMS);
+    const itemsHeaders = getHeaders(itemsSheet);
+    const itemsData = itemsSheet.getDataRange().getValues();
+    const orderIdItemColumnIndex = itemsHeaders.indexOf('orderId');
+
+    if (orderIdItemColumnIndex !== -1) {
+      for (let i = itemsData.length - 1; i > 0; i--) {
+        const itemOrderId = String(itemsData[i][orderIdItemColumnIndex]).trim();
+        if (orderIdsToDelete.includes(itemOrderId)) {
+          itemsSheet.deleteRow(i + 1);
+        }
+      }
+    }
+  }
+
+  // Delete the customer
+  deleteRowById(SHEET_MAPPING.CUSTOMERS, customerId);
+
+  return createJsonResponse({ status: 'success', data: { deletedCustomerId: customerId } });
 }
 
 function handleAddExpense(payload) {

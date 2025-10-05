@@ -49,7 +49,7 @@ const resizeImage = (file: File, maxSize: number): Promise<string> => {
 
 const EditProductPage: React.FC = () => {
   const { productId } = useParams<{ productId: string }>();
-  const { getProductById, updateProduct, t, categories, exchangeRate, isUpdating } = useAppContext();
+  const { getProductById, updateProduct, t, categories, exchangeRate, isUpdating, settings } = useAppContext();
   const navigate = useNavigate();
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -79,14 +79,25 @@ const EditProductPage: React.FC = () => {
         setPoints(existingProduct.points || 0);
         
         if (exchangeRate > 0) {
-            setMemberPriceUSD(parseFloat((existingProduct.memberPrice / exchangeRate).toFixed(2)));
-            setNormalPriceUSD(parseFloat((existingProduct.price / exchangeRate).toFixed(2)));
+            const profitMargin = settings.profitMarginILS ?? 0;
+            // Reverse calculation: The price from getProductById includes the profit margin.
+            // We must subtract it to get the base ILS price before converting back to USD.
+            // Formula: ((Final ILS Price - Profit Margin ILS) / Exchange Rate) - 0.50 USD
+            const baseMemberPriceILS = existingProduct.memberPrice - profitMargin;
+            const baseNormalPriceILS = existingProduct.price - profitMargin;
+
+            const originalMemberPriceUSD = (baseMemberPriceILS / exchangeRate) - 0.50;
+            const originalNormalPriceUSD = (baseNormalPriceILS / exchangeRate) - 0.50;
+
+            // Set to a minimum of 0 to avoid negative numbers in the input if ILS price is low
+            setMemberPriceUSD(parseFloat(Math.max(0, originalMemberPriceUSD).toFixed(2)));
+            setNormalPriceUSD(parseFloat(Math.max(0, originalNormalPriceUSD).toFixed(2)));
         }
 
     } else {
       navigate('/admin/products');
     }
-  }, [productId, getProductById, navigate, exchangeRate]);
+  }, [productId, getProductById, navigate, exchangeRate, settings.profitMarginILS]);
 
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -117,8 +128,13 @@ const EditProductPage: React.FC = () => {
     
     setError('');
 
-    const normalPriceILS = Math.round((normalPriceUSD * exchangeRate) * 100) / 100;
-    const memberPriceILS = Math.round((memberPriceUSD * exchangeRate) * 100) / 100;
+    // 1. Add $0.50 margin to the input USD price.
+    const finalNormalPriceUSD = normalPriceUSD + 0.50;
+    const finalMemberPriceUSD = memberPriceUSD + 0.50;
+
+    // 2. Convert to ILS to get the base price. This is what gets saved to the sheet.
+    const baseNormalPriceILS = finalNormalPriceUSD * exchangeRate;
+    const baseMemberPriceILS = finalMemberPriceUSD * exchangeRate;
     
     if (!product) return;
 
@@ -127,11 +143,12 @@ const EditProductPage: React.FC = () => {
       name,
       categoryId,
       description,
-      price: normalPriceILS,
-      memberPrice: memberPriceILS,
+      price: baseNormalPriceILS, // Save base price (without profit margin)
+      memberPrice: baseMemberPriceILS, // Save base price (without profit margin)
       points: points || 0,
       imageUrl: imageUrl || `https://picsum.photos/seed/${name.replace(/\s/g, '')}/400/300`,
     });
+
 
     if (success) {
       navigate('/admin/products');

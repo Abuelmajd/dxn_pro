@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Link } from 'react-router-dom';
+import { Product } from '../types';
 
 const PencilIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -28,22 +29,128 @@ const EyeOffIcon = () => (
     </svg>
 );
 
+interface DeleteConfirmationModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  errorMessage?: string;
+  warningMessage?: string;
+}
+
+const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({ isOpen, onClose, onConfirm, errorMessage, warningMessage }) => {
+  const { t } = useAppContext();
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = 'auto';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black bg-opacity-60 z-[100] flex justify-center items-center p-4"
+      aria-labelledby="delete-modal-title"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card rounded-xl shadow-2xl p-6 w-full max-w-md transform transition-all"
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 id="delete-modal-title" className="text-xl font-bold text-text-primary">{t('confirmDeletionTitle')}</h3>
+        <p className="text-text-secondary mt-4">
+          {t('confirmDeleteProduct')}
+        </p>
+
+        {warningMessage && (
+          <div className="mt-4 p-3 bg-yellow-900/30 text-yellow-300 rounded-md text-sm border border-yellow-500/30">
+            {warningMessage}
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="mt-4 p-3 bg-red-900/30 text-red-400 rounded-md text-sm border border-red-500/30">
+            {errorMessage}
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-md font-semibold bg-card-secondary text-text-primary hover:bg-border transition-colors"
+          >
+            {t('cancel')}
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 rounded-md font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors"
+          >
+            {t('delete')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 const ProductsListPage: React.FC = () => {
-    const { products, categories, t, formatCurrency, formatNumber, getCategoryNameById, deleteProduct, toggleProductAvailability, isUpdating } = useAppContext();
+    const { products, categories, orders, t, formatCurrency, formatNumber, getCategoryNameById, deleteProduct, toggleProductAvailability, isUpdating } = useAppContext();
     
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategoryId, setSelectedCategoryId] = useState('');
     const [selectedStatus, setSelectedStatus] = useState(''); // '', 'available', 'unavailable'
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+    const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
+    const [deleteWarning, setDeleteWarning] = useState<string | undefined>(undefined);
 
+    const handleDeleteRequest = (product: Product) => {
+        setProductToDelete(product);
+        setDeleteError(undefined);
 
-    const handleDelete = async (productId: string) => {
-        if (window.confirm(t('confirmDeleteProduct'))) {
-            const result = await deleteProduct(productId);
-            if (!result.success) {
-                alert(result.error || "فشل حذف المنتج. يرجى المحاولة مرة أخرى.");
-            }
+        const isInOrder = orders.some(order => order.items.some(item => item.productId === product.id));
+        if (isInOrder) {
+            setDeleteWarning(t('confirmDeleteProductWarning'));
+        } else {
+            setDeleteWarning(undefined);
         }
+        
+        setIsDeleteModalOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!productToDelete) return;
+        
+        const result = await deleteProduct(productToDelete.id);
+        if (!result.success) {
+            setDeleteError(result.error || "An unknown error occurred.");
+            setDeleteWarning(undefined);
+        } else {
+            setIsDeleteModalOpen(false);
+            setProductToDelete(null);
+            setDeleteError(undefined);
+            setDeleteWarning(undefined);
+        }
+    };
+
+    const handleCancelDelete = () => {
+        setIsDeleteModalOpen(false);
+        setProductToDelete(null);
+        setDeleteError(undefined);
+        setDeleteWarning(undefined);
     };
 
     const filteredProducts = useMemo(() => {
@@ -104,7 +211,6 @@ const ProductsListPage: React.FC = () => {
                     <table className="w-full text-sm text-text-secondary">
                         <thead className="text-xs text-text-primary uppercase bg-card-secondary">
                             <tr>
-                                {/* FIX: Argument of type '"image"' is not assignable to parameter of type 'TranslationKeys'. Use 'productImage' instead. */}
                                 <th scope="col" className="px-6 py-3 min-w-[80px]">{t('productImage')}</th>
                                 <th scope="col" className="px-6 py-3 min-w-[200px] text-right">{t('productName')}</th>
                                 <th scope="col" className="px-6 py-3 text-center">{t('normalPrice')}</th>
@@ -157,7 +263,7 @@ const ProductsListPage: React.FC = () => {
                                                         <PencilIcon />
                                                     </Link>
                                                     <button 
-                                                        onClick={() => handleDelete(product.id)} 
+                                                        onClick={() => handleDeleteRequest(product)} 
                                                         disabled={isUpdating}
                                                         title={t('delete')}
                                                         className="p-2 rounded-full text-text-secondary hover:bg-card-secondary hover:text-red-400 transition-colors disabled:opacity-50"
@@ -180,6 +286,13 @@ const ProductsListPage: React.FC = () => {
                     </table>
                 </div>
             </div>
+            <DeleteConfirmationModal 
+                isOpen={isDeleteModalOpen}
+                onClose={handleCancelDelete}
+                onConfirm={handleConfirmDelete}
+                errorMessage={deleteError}
+                warningMessage={deleteWarning}
+            />
         </div>
     );
 };

@@ -48,7 +48,7 @@ const resizeImage = (file: File, maxSize: number): Promise<string> => {
 
 
 const AddProductPage: React.FC = () => {
-  const { addProduct, t, categories, exchangeRate, isUpdating } = useAppContext();
+  const { addProduct, t, categories, exchangeRate, isUpdating, settings } = useAppContext();
   const navigate = useNavigate();
 
   const [name, setName] = useState('');
@@ -90,18 +90,24 @@ const AddProductPage: React.FC = () => {
     
     setError('');
 
-    const normalPriceILS = Math.round((normalPriceUSD * exchangeRate) * 100) / 100;
-    const memberPriceILS = Math.round((memberPriceUSD * exchangeRate) * 100) / 100;
+    // 1. Add $0.50 margin to the input USD price.
+    const finalNormalPriceUSD = normalPriceUSD + 0.50;
+    const finalMemberPriceUSD = memberPriceUSD + 0.50;
+
+    // 2. Convert to ILS to get the base price. This is what gets saved to the sheet.
+    const baseNormalPriceILS = finalNormalPriceUSD * exchangeRate;
+    const baseMemberPriceILS = finalMemberPriceUSD * exchangeRate;
     
     const success = await addProduct({
       name,
       categoryId,
       description,
-      price: normalPriceILS,
-      memberPrice: memberPriceILS,
+      price: baseNormalPriceILS, // Save base price (without profit margin)
+      memberPrice: baseMemberPriceILS, // Save base price (without profit margin)
       points: points || 0,
       imageUrl: imageUrl || `https://picsum.photos/seed/${name.replace(/\s/g, '')}/400/300`,
     });
+
 
     if (success) {
       navigate('/admin/products');
