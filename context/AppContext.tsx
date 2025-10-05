@@ -220,7 +220,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const login = (username: string, password: string): boolean => {
     // This is a simplified, insecure login. In a real app, this would be an API call.
-    if (username === 'admin' && password === 'admin') {
+    if (username === 'admin' && password === 'amdxn') {
       setIsAuthenticated(true);
       return true;
     }
