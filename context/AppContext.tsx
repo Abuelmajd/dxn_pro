@@ -270,10 +270,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const formatCurrency = (amount: number): string => {
     const roundedAmount = Math.round(amount * 10) / 10;
+    const isInteger = roundedAmount % 1 === 0;
+
+    const formattedAmount = isInteger 
+      ? formatInteger(roundedAmount) 
+      : formatNumber(roundedAmount);
+    
     if (settings.language === 'ar') {
-       return `${formatNumber(roundedAmount)} ${settings.currency.symbol}`;
+       return `${formattedAmount} ${settings.currency.symbol}`;
     }
-    return `${settings.currency.symbol}${formatNumber(roundedAmount)}`;
+    return `${settings.currency.symbol}${formattedAmount}`;
   };
   
   const formatDate = (date: Date): string => {
