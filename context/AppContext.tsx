@@ -290,12 +290,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const handleGenericUpdate = async (action: string, payload: any, dataToRefetch: ('products'|'orders'|'customers'|'expenses'|'customerSelections')[] = []) => {
     setIsUpdating(true);
     const result = await callGoogleScript(action, payload);
-    if (result) {
-      // Refetch data to ensure UI is up-to-date
+    // A successful call might return `undefined` if no data is sent back, while a failed call returns `null`.
+    // We check for `null` to determine if the call failed.
+    if (result !== null) {
       await fetchData(); 
     }
     setIsUpdating(false);
-    return !!result;
+    return result !== null;
   }
   
   const addOrder = async (customerData: Omit<Customer, 'id'>, items: CartItem[]) => {

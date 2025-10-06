@@ -87,7 +87,6 @@ const Header: React.FC = () => {
       <>
         <NavLink to="/admin" end className={linkClass} onClick={closeMenu}>{t('dashboard')}</NavLink>
         <NavLink to="/admin/products" className={linkClass} onClick={closeMenu}>{t('products')}</NavLink>
-        <NavLink to="/admin/orders" className={linkClass} onClick={closeMenu}>{t('invoices')}</NavLink>
         <NavLink to="/admin/customer-selections" className={linkClass} onClick={closeMenu}>
           {t('customerSelections')}
           {!isMobile && pendingCount > 0 && (
@@ -97,9 +96,10 @@ const Header: React.FC = () => {
           )}
           {isMobile && pendingCount > 0 && <span className="ms-2 inline-block bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">{pendingCount}</span>}
         </NavLink>
+        <NavLink to="/admin/orders" className={linkClass} onClick={closeMenu}>{t('invoices')}</NavLink>
+        <NavLink to="/admin/customers" className={linkClass} onClick={closeMenu}>{t('customers')}</NavLink>
         <NavLink to="/admin/reports" className={linkClass} onClick={closeMenu}>{t('reports')}</NavLink>
         <NavLink to="/admin/expenses" className={linkClass} onClick={closeMenu}>{t('expenses')}</NavLink>
-        <NavLink to="/admin/customers" className={linkClass} onClick={closeMenu}>{t('customers')}</NavLink>
       </>
     );
   };
@@ -123,9 +123,6 @@ const Header: React.FC = () => {
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center space-s-4">
               {renderNavLinks(false)}
-              <NavLink to="/admin/new-order" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
-                {t('newInvoice')}
-              </NavLink>
               <ThemeToggle className="text-text-primary hover:text-accent transition-colors p-2 rounded-full hover:bg-card-secondary" />
               <NavLink to="/admin/setup-check" title={t('setupCheck')} className="text-text-primary hover:text-accent transition-colors p-2 rounded-full hover:bg-card-secondary">
                 <ChecklistIcon />
@@ -163,11 +160,6 @@ const Header: React.FC = () => {
                 <nav className="p-4 flex flex-col gap-2">
                     {renderNavLinks(true)}
                 </nav>
-                <div className="p-4 space-y-2">
-                    <NavLink to="/admin/new-order" onClick={() => setIsMenuOpen(false)} className="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary-hover">
-                        {t('newInvoice')}
-                    </NavLink>
-                </div>
                 <div className="p-4 mt-4 border-t border-border space-y-2">
                     <NavLink to="/admin/setup-check" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 text-text-primary hover:bg-card-secondary p-3 rounded-md">
                         <ChecklistIcon /> <span>{t('setupCheck')}</span>
