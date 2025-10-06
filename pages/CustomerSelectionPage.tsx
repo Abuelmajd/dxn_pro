@@ -265,7 +265,7 @@ const CustomerSelectionPage: React.FC = () => {
             <img 
                 src="https://lh3.googleusercontent.com/d/1JVW882aiQIHcc91tEhn9_fOjRSOJFkS8" 
                 alt="DXN App Logo" 
-                className="h-24 w-auto mx-auto mb-6"
+                className="h-24 w-auto mx-auto mb-6 rounded-3xl"
             />
             <h1 className="text-4xl font-bold tracking-tight text-text-primary sm:text-5xl">{t('productSelectionPage')}</h1>
             <p className="mt-4 text-lg leading-8 text-text-secondary">{t('selectYourProducts')}</p>

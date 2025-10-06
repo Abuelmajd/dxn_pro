@@ -6,7 +6,7 @@ const DxnLogo = () => (
     <img 
         src="https://lh3.googleusercontent.com/d/1JVW882aiQIHcc91tEhn9_fOjRSOJFkS8"
         alt="DXN App Logo"
-        className="h-16 w-auto mx-auto"
+        className="h-16 w-auto mx-auto rounded-3xl"
     />
 );
 
