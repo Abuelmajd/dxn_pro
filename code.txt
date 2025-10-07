@@ -17,13 +17,13 @@
 //    Please copy and paste these headers precisely to ensure the code works correctly.
 //
 //    - Products sheet headers:
-//      id, name, categoryId, description, price, memberPrice, imageUrl, isAvailable, points
+//      id, name, categoryId, description, price, memberPrice, normalPriceUSD, memberPriceUSD, imageUrl, isAvailable, points
 //
 //    - Categories sheet headers:
 //      id, name
 //
 //    - Customers sheet headers:
-//      id, name, address, phone, whatsapp, email
+//      id, name, phone, whatsapp, email, address, registrationDate
 //
 //    - Orders sheet headers:
 //      id, customerId, customerName, totalPrice, totalPoints, createdAt
@@ -35,7 +35,7 @@
 //      id, description, amount, date
 //
 //    - CustomerSelections sheet headers:
-//      id, customerName, customerPhone, customerEmail, createdAt, status
+//      id, customerName, customerPhone, customerEmail, customerAddress, createdAt, status
 //
 //    - CustomerSelectionItems sheet headers:
 //      selectionId, productId, name, price, quantity, points
@@ -53,6 +53,23 @@
 //
 // ================================================================================================
 
+// --- MERCHANT NOTIFICATION SETTINGS ---
+// To receive notifications for new customer orders, fill in the details below.
+// To disable a notification method, leave its values as empty strings ('').
+const MERCHANT_NOTIFICATIONS = {
+  // Your email address to receive notifications.
+  EMAIL: '', // e.g., 'abuelmajd3@gmail.com'
+  
+  // --- Telegram Bot Settings ---
+  // 1. Create a new bot by talking to @BotFather on Telegram.
+  // 2. BotFather will give you a "token". Paste it here.
+  TELEGRAM_BOT_TOKEN: '', // e.g., '8465067674:AAFRQf4VOAi80fiBsMPP8JUGal0DRAuMpy8'
+  
+  // 3. Send a message to your new bot.
+  // 4. Then, get your Chat ID by talking to a bot like @userinfobot. It's usually a long number.
+  TELEGRAM_CHAT_ID: '' // e.g., '940722838'
+};
+
 // --- CONFIGURATION ---
 const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 
@@ -68,13 +85,13 @@ const SHEET_MAPPING = {
 };
 
 const REQUIRED_SCHEMA = {
-  'Products': ['id', 'name', 'categoryId', 'description', 'price', 'memberPrice', 'imageUrl', 'isAvailable', 'points'],
+  'Products': ['id', 'name', 'categoryId', 'description', 'price', 'memberPrice', 'normalPriceUSD', 'memberPriceUSD', 'imageUrl', 'isAvailable', 'points'],
   'Categories': ['id', 'name'],
-  'Customers': ['id', 'name', 'address', 'phone', 'whatsapp', 'email'],
+  'Customers': ['id', 'name', 'phone', 'whatsapp', 'email', 'address', 'registrationDate'],
   'Orders': ['id', 'customerId', 'customerName', 'totalPrice', 'totalPoints', 'createdAt'],
   'OrderItems': ['orderId', 'productId', 'name', 'price', 'quantity', 'points'],
   'Expenses': ['id', 'description', 'amount', 'date'],
-  'CustomerSelections': ['id', 'customerName', 'customerPhone', 'customerEmail', 'createdAt', 'status'],
+  'CustomerSelections': ['id', 'customerName', 'customerPhone', 'customerEmail', 'customerAddress', 'createdAt', 'status'],
   'CustomerSelectionItems': ['selectionId', 'productId', 'name', 'price', 'quantity', 'points']
 };
 
@@ -189,11 +206,10 @@ function handleAddProduct(payload) {
 }
 
 function handleUpdateProduct(payload) {
-    // Get the existing product to check the old imageUrl
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.PRODUCTS);
     const headers = getHeaders(sheet);
     const data = sheet.getDataRange().getValues();
-    const idColumnIndex = headers.indexOf('id');
+    const idColumnIndex = headers.findIndex(h => h.toLowerCase() === 'id');
     const rowIndex = data.findIndex(row => String(row[idColumnIndex]).trim() == String(payload.id).trim());
 
     if (rowIndex < 1) { // not found
@@ -204,7 +220,6 @@ function handleUpdateProduct(payload) {
     const oldImageUrl = existingProduct.imageUrl;
     const newImageUrl = payload.imageUrl;
     
-    // If imageUrl is a new base64 string, save it and delete the old one.
     if (newImageUrl && newImageUrl.startsWith('data:image')) {
         const fileName = `product_${payload.id}_${new Date().getTime()}`;
         payload.imageUrl = _saveBase64ImageToDrive(newImageUrl, fileName);
@@ -220,12 +235,10 @@ function handleDeleteProduct(payload) {
         throw new Error("Product ID is missing.");
     }
     const productId = payload.productId;
-
-    // Delete the image from Drive if it exists
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.PRODUCTS);
     const headers = getHeaders(sheet);
     const data = sheet.getDataRange().getValues();
-    const idColumnIndex = headers.indexOf('id');
+    const idColumnIndex = headers.findIndex(h => h.toLowerCase() === 'id');
     const rowIndex = data.findIndex(row => String(row[idColumnIndex]).trim() == String(productId).trim());
 
     if (rowIndex > 0) {
@@ -233,7 +246,6 @@ function handleDeleteProduct(payload) {
         _deleteImageFromDrive(productToDelete.imageUrl);
     }
 
-    // Delete the product row from the sheet
     deleteRowById(SHEET_MAPPING.PRODUCTS, productId);
     
     return createJsonResponse({ status: 'success' });
@@ -248,8 +260,8 @@ function handleToggleProductAvailability(payload) {
     const headers = getHeaders(sheet);
     const data = sheet.getDataRange().getValues();
     
-    const idColumnIndex = headers.indexOf('id');
-    const isAvailableColumnIndex = headers.indexOf('isAvailable');
+    const idColumnIndex = headers.findIndex(h => h.toLowerCase() === 'id');
+    const isAvailableColumnIndex = headers.findIndex(h => h.toLowerCase() === 'isavailable');
     if (idColumnIndex === -1 || isAvailableColumnIndex === -1) throw new Error("Required columns ('id', 'isAvailable') not found in Products sheet.");
 
     const rowIndex = data.findIndex(row => String(row[idColumnIndex]).trim() == String(productId).trim());
@@ -266,16 +278,20 @@ function handleToggleProductAvailability(payload) {
 
 
 function handleAddOrder(payload) {
-    const { customerData, items } = payload;
+    const { customerData, items, selectionId } = payload;
     
     const customersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMERS);
     const headers = getHeaders(customersSheet);
-    const phoneColumnIndex = headers.map(h => h.toLowerCase()).indexOf('phone');
+    const phoneColumnIndex = headers.findIndex(h => h.toLowerCase() === 'phone');
     const customersData = customersSheet.getDataRange().getValues();
     
     let customerRowIndex = -1;
     if (customerData.phone && phoneColumnIndex !== -1) {
-      customerRowIndex = customersData.findIndex(row => row[phoneColumnIndex] == customerData.phone);
+      const searchPhone = String(customerData.phone).trim();
+      customerRowIndex = customersData.findIndex((row, index) => {
+        if (index === 0) return false; // Skip header
+        return String(row[phoneColumnIndex]).trim() === searchPhone;
+      });
     }
     
     let customer;
@@ -284,14 +300,14 @@ function handleAddOrder(payload) {
         customer = { ...existingCustomer, ...customerData };
         updateRowById(SHEET_MAPPING.CUSTOMERS, customer.id, customer);
     } else {
-        customer = { ...customerData, id: generateUniqueId() };
+        customer = { ...customerData, id: generateUniqueId(), registrationDate: new Date().toISOString() };
         appendRowFromObject(customersSheet, customer);
     }
     
     const ordersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDERS);
     const newOrderId = generateUniqueId();
     const totalPrice = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const totalPoints = items.reduce((sum, item) => sum + ((item.points || 0) * item.quantity), 0);
+    const totalPoints = items.reduce((sum, item) => sum + (item.points * item.quantity), 0);
     
     const newOrder = {
         id: newOrderId,
@@ -309,21 +325,34 @@ function handleAddOrder(payload) {
         appendRowFromObject(orderItemsSheet, newOrderItem);
     });
 
-    return createJsonResponse({ status: 'success', data: { newOrder: { ...newOrder, items }, updatedCustomer: customer } });
+    if (selectionId) {
+      try {
+        updateRowById(SHEET_MAPPING.CUSTOMER_SELECTIONS, selectionId, { status: 'processed' });
+      } catch (e) {
+        Logger.log("Failed to update selection " + selectionId + " status. Error: " + e.toString());
+      }
+    }
+
+    return createJsonResponse({ 
+        status: 'success', 
+        data: { 
+            newOrder: { ...newOrder, items }, 
+            updatedCustomer: customer,
+            processedSelectionId: selectionId 
+        } 
+    });
 }
 
 function handleDeleteOrder(payload) {
   const { orderId } = payload;
   if (!orderId) throw new Error("Order ID is required to delete.");
 
-  // Delete associated order items first
   const itemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDER_ITEMS);
   const itemsHeaders = getHeaders(itemsSheet);
   const itemsData = itemsSheet.getDataRange().getValues();
-  const orderIdColumnIndex = itemsHeaders.indexOf('orderId');
+  const orderIdColumnIndex = itemsHeaders.findIndex(h => h.toLowerCase() === 'orderid');
 
   if (orderIdColumnIndex !== -1) {
-    // Iterate backwards to avoid issues with changing row indices after deletion
     for (let i = itemsData.length - 1; i > 0; i--) {
       if (String(itemsData[i][orderIdColumnIndex]).trim() === String(orderId).trim()) {
         itemsSheet.deleteRow(i + 1);
@@ -331,7 +360,6 @@ function handleDeleteOrder(payload) {
     }
   }
 
-  // Delete the order itself
   deleteRowById(SHEET_MAPPING.ORDERS, orderId);
 
   return createJsonResponse({ status: 'success', data: { deletedOrderId: orderId } });
@@ -341,12 +369,11 @@ function handleDeleteCustomer(payload) {
   const { customerId } = payload;
   if (!customerId) throw new Error("Customer ID is required to delete.");
   
-  // Find all orders for this customer
   const ordersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDERS);
   const ordersHeaders = getHeaders(ordersSheet);
   const ordersData = ordersSheet.getDataRange().getValues();
-  const customerIdColumnIndex = ordersHeaders.indexOf('customerId');
-  const orderIdHeaderIndex = ordersHeaders.indexOf('id');
+  const customerIdColumnIndex = ordersHeaders.findIndex(h => h.toLowerCase() === 'customerid');
+  const orderIdHeaderIndex = ordersHeaders.findIndex(h => h.toLowerCase() === 'id');
   
   const orderIdsToDelete = [];
   if (customerIdColumnIndex !== -1 && orderIdHeaderIndex !== -1) {
@@ -358,12 +385,11 @@ function handleDeleteCustomer(payload) {
     }
   }
 
-  // Delete all associated order items
   if (orderIdsToDelete.length > 0) {
     const itemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDER_ITEMS);
     const itemsHeaders = getHeaders(itemsSheet);
     const itemsData = itemsSheet.getDataRange().getValues();
-    const orderIdItemColumnIndex = itemsHeaders.indexOf('orderId');
+    const orderIdItemColumnIndex = itemsHeaders.findIndex(h => h.toLowerCase() === 'orderid');
 
     if (orderIdItemColumnIndex !== -1) {
       for (let i = itemsData.length - 1; i > 0; i--) {
@@ -375,7 +401,6 @@ function handleDeleteCustomer(payload) {
     }
   }
 
-  // Delete the customer
   deleteRowById(SHEET_MAPPING.CUSTOMERS, customerId);
 
   return createJsonResponse({ status: 'success', data: { deletedCustomerId: customerId } });
@@ -389,27 +414,79 @@ function handleAddExpense(payload) {
 
 function handleDeleteExpense(payload) {
     deleteRowById(SHEET_MAPPING.EXPENSES, payload.expenseId);
-    return createJsonResponse({ status: 'success' });
+    return createJsonResponse({ status: 'success', data: { success: true } });
 }
 
 function handleAddCustomerSelection(payload) {
+    // 1. Add or Update Customer Record
+    const { customerName, customerPhone, customerEmail, customerAddress, items } = payload;
+    const customerData = {
+      name: customerName,
+      phone: customerPhone,
+      whatsapp: customerPhone, // Assume phone and whatsapp are the same from this form
+      email: customerEmail,
+      address: customerAddress
+    };
+
+    const customersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMERS);
+    const headers = getHeaders(customersSheet);
+    const phoneColumnIndex = headers.findIndex(h => h.toLowerCase() === 'phone');
+    const customersData = customersSheet.getDataRange().getValues();
+    
+    let customerRowIndex = -1;
+    if (customerData.phone && phoneColumnIndex !== -1) {
+      const searchPhone = String(customerData.phone).trim();
+      customerRowIndex = customersData.findIndex((row, index) => {
+        if (index === 0) return false; // Skip header
+        return String(row[phoneColumnIndex]).trim() === searchPhone;
+      });
+    }
+    
+    let customer;
+    if (customerRowIndex !== -1) { // Found existing customer
+        const existingCustomer = mapRowToAnObject(customersData[customerRowIndex], headers);
+        customer = { ...existingCustomer, ...customerData };
+        updateRowById(SHEET_MAPPING.CUSTOMERS, customer.id, customer);
+    } else { // New customer
+        customer = { ...customerData, id: generateUniqueId(), registrationDate: new Date().toISOString() };
+        appendRowFromObject(customersSheet, customer);
+    }
+
+    // 2. Save Customer Selection
     const selectionsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMER_SELECTIONS);
-    const newId = generateUniqueId();
-    const newSelection = { ...payload, items: undefined, id: newId, createdAt: new Date().toISOString(), status: 'pending' };
+    const newSelectionId = generateUniqueId();
+    const newSelection = { 
+      id: newSelectionId, 
+      customerName: payload.customerName,
+      customerPhone: payload.customerPhone,
+      customerEmail: payload.customerEmail,
+      customerAddress: payload.customerAddress,
+      createdAt: new Date().toISOString(), 
+      status: 'pending' 
+    };
     appendRowFromObject(selectionsSheet, newSelection);
     
+    // 3. Save Selection Items
     const selectionItemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMER_SELECTION_ITEMS);
     payload.items.forEach(item => {
-        const newSelectionItem = { ...item, selectionId: newId };
+        const newSelectionItem = { ...item, selectionId: newSelectionId };
         appendRowFromObject(selectionItemsSheet, newSelectionItem);
     });
+
+    // 4. Send Notification
+    try {
+      _sendNotification(payload);
+    } catch(e) {
+      Logger.log(`Notification sending failed: ${e.toString()}`);
+    }
 
     return createJsonResponse({ status: 'success', data: newSelection });
 }
 
+
 function handleProcessSelection(payload) {
     updateRowById(SHEET_MAPPING.CUSTOMER_SELECTIONS, payload.selectionId, { status: 'processed' });
-    return createJsonResponse({ status: 'success' });
+    return createJsonResponse({ status: 'success', data: { success: true } });
 }
 
 function handleHealthCheck() {
@@ -422,8 +499,8 @@ function handleHealthCheck() {
       results.push({ check: `Sheet '${sheetName}'`, status: 'success', details: `Sheet exists.` });
       
       const sheet = spreadsheet.getSheetByName(sheetName);
-      const actualHeaders = getHeaders(sheet);
-      const requiredHeaders = REQUIRED_SCHEMA[sheetName];
+      const actualHeaders = getHeaders(sheet).map(h => h.toLowerCase());
+      const requiredHeaders = REQUIRED_SCHEMA[sheetName].map(h => h.toLowerCase());
       
       const missingHeaders = requiredHeaders.filter(h => !actualHeaders.includes(h));
 
@@ -440,11 +517,68 @@ function handleHealthCheck() {
   return createJsonResponse({ status: 'success', data: results });
 }
 
+// --- NOTIFICATION FUNCTIONS ---
+
+function _sendNotification(selectionData) {
+  const { customerName, customerPhone, customerEmail, customerAddress, items } = selectionData;
+  
+  if (!MERCHANT_NOTIFICATIONS.EMAIL && (!MERCHANT_NOTIFICATIONS.TELEGRAM_BOT_TOKEN || !MERCHANT_NOTIFICATIONS.TELEGRAM_CHAT_ID)) {
+    return;
+  }
+      
+  let total = 0;
+  const itemsList = items.map(item => {
+    const itemTotal = item.price * item.quantity;
+    total += itemTotal;
+    return `${item.name} (x${item.quantity}) - ${itemTotal.toFixed(2)}`;
+  }).join('\n');
+
+  const subject = `طلب جديد من ${customerName}`;
+  
+  let messageBody = `*طلب جديد وصل!*\n\n` +
+                    `*العميل:* ${customerName}\n` +
+                    `*الهاتف:* ${customerPhone}\n`;
+  if (customerEmail) {
+    messageBody += `*البريد:* ${customerEmail}\n`;
+  }
+  if (customerAddress) {
+    messageBody += `*العنوان:* ${customerAddress}\n`;
+  }
+  messageBody += `\n*المنتجات:*\n` +
+                 `${itemsList}\n\n` +
+                 `*الإجمالي:* ${total.toFixed(2)}`;
+
+  if (MERCHANT_NOTIFICATIONS.EMAIL) {
+    try {
+      const emailBody = messageBody.replace(/\*/g, '');
+      MailApp.sendEmail(MERCHANT_NOTIFICATIONS.EMAIL, subject, emailBody);
+    } catch (e) {
+      Logger.log(`Failed to send email notification: ${e.toString()}`);
+    }
+  }
+
+  if (MERCHANT_NOTIFICATIONS.TELEGRAM_BOT_TOKEN && MERCHANT_NOTIFICATIONS.TELEGRAM_CHAT_ID) {
+    try {
+      const telegramUrl = `https://api.telegram.org/bot${MERCHANT_NOTIFICATIONS.TELEGRAM_BOT_TOKEN}/sendMessage`;
+      const payload = {
+        chat_id: MERCHANT_NOTIFICATIONS.TELEGRAM_CHAT_ID,
+        text: messageBody,
+        parse_mode: 'Markdown'
+      };
+      UrlFetchApp.fetch(telegramUrl, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify(payload)
+      });
+    } catch (e) {
+      Logger.log(`Failed to send Telegram notification: ${e.toString()}`);
+    }
+  }
+}
+
+
 // --- IMAGE HANDLING HELPERS ---
 
-/**
- * Saves a base64 encoded image to a specific folder in Google Drive and returns its public URL.
- */
 function _saveBase64ImageToDrive(base64DataUrl, fileName) {
   const FOLDER_NAME = 'DXN_App_Images';
   let folders = DriveApp.getFoldersByName(FOLDER_NAME);
@@ -473,9 +607,6 @@ function _saveBase64ImageToDrive(base64DataUrl, fileName) {
   return imageUrl;
 }
 
-/**
- * Moves a previously uploaded image from Google Drive to the trash.
- */
 function _deleteImageFromDrive(imageUrl) {
   if (imageUrl && imageUrl.includes('lh3.googleusercontent.com/d/')) {
     try {
@@ -513,40 +644,51 @@ function getSheetData(sheetName) {
 
   const headers = getHeaders(sheet);
   return values.slice(1).map(row => {
-    if (row[0] === '') return null; // Skip empty rows based on ID
+    if (row[0] === '') return null; 
     return mapRowToAnObject(row, headers);
-  }).filter(Boolean); // Filter out nulls
+  }).filter(Boolean);
 }
 
 function mapRowToAnObject(row, headers) {
     const obj = {};
     headers.forEach((header, index) => {
         if (!header) return;
+        let key = header.charAt(0).toLowerCase() + header.slice(1);
         let value = row[index];
-        const lowerHeader = header.toLowerCase();
+        const lowerKey = key.toLowerCase();
 
-        if (['price', 'memberprice', 'amount', 'quantity', 'points', 'totalprice', 'totalpoints'].includes(lowerHeader)) {
+        if (['price', 'memberprice', 'amount', 'quantity', 'points', 'totalprice', 'totalpoints', 'normalpriceusd', 'memberpriceusd'].includes(lowerKey)) {
             value = parseFloat(value) || 0;
-        } else if (lowerHeader === 'isavailable') {
+        } else if (lowerKey === 'isavailable') {
             value = value === true || String(value).toLowerCase() === 'true';
-        } else if ((lowerHeader.includes('date') || lowerHeader.includes('createdat')) && value && !isNaN(new Date(value).getTime())) {
+        } else if ((lowerKey.includes('date') || lowerKey.includes('createdat') || lowerKey.includes('registrationdate')) && value && !isNaN(new Date(value).getTime())) {
             value = new Date(value).toISOString();
         }
-        obj[header] = value;
+        obj[key] = value;
     });
     return obj;
 }
 
 function appendRowFromObject(sheet, obj) {
     const headers = getHeaders(sheet);
-    const newRow = headers.map(header => (obj[header] !== undefined && obj[header] !== null ? obj[header] : ''));
+    const lowerCaseValueMap = {};
+    for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+            lowerCaseValueMap[key.toLowerCase()] = obj[key];
+        }
+    }
+
+    const newRow = headers.map(header => {
+        const value = lowerCaseValueMap[header.toLowerCase()];
+        return (value !== undefined && value !== null) ? value : '';
+    });
     sheet.appendRow(newRow);
 }
 
 function updateRowById(sheetName, recordId, payload) {
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
     const headers = getHeaders(sheet);
-    const idColumnIndex = headers.indexOf('id');
+    const idColumnIndex = headers.findIndex(h => h.toLowerCase() === 'id');
     if (idColumnIndex === -1) throw new Error(`'id' column not found in sheet "${sheetName}".`);
 
     const data = sheet.getDataRange().getValues();
@@ -555,7 +697,19 @@ function updateRowById(sheetName, recordId, payload) {
     if (rowIndex > 0) {
         const existingRecord = mapRowToAnObject(data[rowIndex], headers);
         const updatedRecord = { ...existingRecord, ...payload };
-        const updatedRow = headers.map(header => (updatedRecord[header] !== undefined ? updatedRecord[header] : ''));
+        
+        const lowerCaseValueMap = {};
+        for (const key in updatedRecord) {
+            if (updatedRecord.hasOwnProperty(key)) {
+                lowerCaseValueMap[key.toLowerCase()] = updatedRecord[key];
+            }
+        }
+
+        const updatedRow = headers.map(header => {
+            const value = lowerCaseValueMap[header.toLowerCase()];
+            return (value !== undefined && value !== null) ? value : '';
+        });
+
         sheet.getRange(rowIndex + 1, 1, 1, headers.length).setValues([updatedRow]);
     } else {
         throw new Error(`Record with ID ${recordId} not found in "${sheetName}".`);
@@ -565,7 +719,7 @@ function updateRowById(sheetName, recordId, payload) {
 function deleteRowById(sheetName, recordId) {
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
     const headers = getHeaders(sheet);
-    const idColumnIndex = headers.indexOf('id');
+    const idColumnIndex = headers.findIndex(h => h.toLowerCase() === 'id');
     if (idColumnIndex === -1) throw new Error(`'id' column not found in sheet "${sheetName}".`);
     
     const data = sheet.getDataRange().getValues();

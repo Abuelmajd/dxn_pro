@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { CartItem, Product, Customer, CustomerSelection } from '../types';
+import ButtonSpinner from '../components/ButtonSpinner';
 
 const ProductSelectionCard: React.FC<{ product: Product, onAddToCart: (product: Product) => void }> = ({ product, onAddToCart }) => {
     const { t, formatCurrency, getCategoryNameById } = useAppContext();
@@ -37,7 +38,7 @@ const ProductSelectionCard: React.FC<{ product: Product, onAddToCart: (product: 
 
 
 const NewOrderPage: React.FC = () => {    
-  const { products, categories, addOrder, t, formatCurrency, isUpdating } = useAppContext();
+  const { products, categories, customers, addOrder, t, formatCurrency, isUpdating } = useAppContext();
   const navigate = useNavigate();
   const location = useLocation();
   const selection: CustomerSelection | undefined = location.state?.selection;
@@ -54,32 +55,52 @@ const NewOrderPage: React.FC = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [error, setError] = useState('');
   const [cameFromSelection, setCameFromSelection] = useState(false);
+  const [originalSelectionId, setOriginalSelectionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (selection) {
         setCameFromSelection(true);
+        setOriginalSelectionId(selection.id);
+
+        // Find if this customer already exists in the main customer list
+        const existingCustomer = customers.find(c => c.phone === selection.customerPhone);
+
+        // Use existing customer data if available, otherwise fall back to selection data
         setCustomerData({
-            name: selection.customerName,
-            phone: selection.customerPhone,
-            whatsapp: selection.customerPhone,
-            address: '', // Address is not in selection
-            email: selection.customerEmail || ''
+            name: existingCustomer?.name || selection.customerName,
+            phone: existingCustomer?.phone || selection.customerPhone,
+            whatsapp: existingCustomer?.whatsapp || selection.customerPhone,
+            address: existingCustomer?.address || selection.customerAddress,
+            email: existingCustomer?.email || selection.customerEmail
         });
+        
         setCart(selection.items);
+        
         // Clear state from location to avoid re-populating on refresh
         navigate('.', { state: {}, replace: true }); 
     }
-  }, [selection, navigate]);
+  }, [selection, navigate, customers]);
 
   const handleCustomerDataChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      setCustomerData({
-          ...customerData,
-          [e.target.name]: e.target.value
-      });
+    const { name, value } = e.target;
+    if (name === 'phone' || name === 'whatsapp') {
+        const numericValue = value.replace(/\D/g, '');
+        if (numericValue.length <= 10) {
+            setCustomerData({
+                ...customerData,
+                [name]: numericValue
+            });
+        }
+    } else {
+        setCustomerData({
+            ...customerData,
+            [name]: value
+        });
+    }
   };
 
   const addToCart = (product: Product) => {
-    if (!(product.isAvailable ?? true)) return; // Do not add unavailable products
+    if (!product.isAvailable) return; // Do not add unavailable products
     const existingItem = cart.find(item => item.productId === product.id);
     if (existingItem) {
         updateQuantity(product.id, existingItem.quantity + 1);
@@ -89,7 +110,7 @@ const NewOrderPage: React.FC = () => {
             name: product.name, 
             price: product.price, // Using the normal price for orders
             quantity: 1, 
-            points: product.points || 0,
+            points: product.points,
         }]);
     }
   };
@@ -106,8 +127,8 @@ const NewOrderPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerData.name.trim() || !customerData.phone.toString().trim()) {
-        setError(t('errorCustomerNamePhone'));
+    if (!customerData.name.trim() || !customerData.phone.trim() || !customerData.whatsapp.trim() || !customerData.email.trim() || !customerData.address.trim()) {
+        setError(t('errorFillAllFields'));
         return;
     }
     if (cart.length === 0) {
@@ -116,15 +137,15 @@ const NewOrderPage: React.FC = () => {
     }
     setError('');
 
-    const customerToAdd: Omit<Customer, 'id'> = {
+    const customerToAdd: Omit<Customer, 'id' | 'registrationDate'> = {
         name: customerData.name,
         address: customerData.address,
         phone: customerData.phone,
-        whatsapp: customerData.whatsapp || customerData.phone,
+        whatsapp: customerData.whatsapp,
         email: customerData.email,
     };
 
-    const success = await addOrder(customerToAdd, cart);
+    const success = await addOrder(customerToAdd, cart, originalSelectionId);
     
     if (success) {
       if (cameFromSelection) {
@@ -189,19 +210,19 @@ const NewOrderPage: React.FC = () => {
               </div>
               <div>
                 <label htmlFor="phone" className="block text-sm font-medium text-text-primary mb-1">{t('phoneNumber')}</label>
-                <input type="tel" name="phone" id="phone" value={customerData.phone} onChange={handleCustomerDataChange} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent" required />
+                <input type="tel" name="phone" id="phone" value={customerData.phone} onChange={handleCustomerDataChange} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent" required pattern="[0-9]{10}" title={t('phone_10_digits_error')} placeholder="05..." />
               </div>
               <div>
                 <label htmlFor="whatsapp" className="block text-sm font-medium text-text-primary mb-1">{t('whatsappOptional')}</label>
-                <input type="tel" name="whatsapp" id="whatsapp" value={customerData.whatsapp} onChange={handleCustomerDataChange} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent" />
+                <input type="tel" name="whatsapp" id="whatsapp" value={customerData.whatsapp} onChange={handleCustomerDataChange} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent" required pattern="[0-9]{10}" title={t('phone_10_digits_error')} placeholder="05..." />
               </div>
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-text-primary mb-1">{t('emailOptional')}</label>
-                <input type="email" name="email" id="email" value={customerData.email} onChange={handleCustomerDataChange} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent" />
+                <input type="email" name="email" id="email" value={customerData.email} onChange={handleCustomerDataChange} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent" required title={t('email_invalid_error')} />
               </div>
                <div>
                 <label htmlFor="address" className="block text-sm font-medium text-text-primary mb-1">{t('addressOptional')}</label>
-                <textarea name="address" id="address" value={customerData.address} onChange={handleCustomerDataChange} rows={2} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent" />
+                <textarea name="address" id="address" value={customerData.address} onChange={handleCustomerDataChange} rows={2} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent" required />
               </div>
             </div>
 
@@ -244,9 +265,9 @@ const NewOrderPage: React.FC = () => {
             <button
               type="submit"
               disabled={isUpdating || cart.length === 0 || !customerData.name || !customerData.phone}
-              className="w-full bg-primary text-white py-3 rounded-lg font-bold hover:bg-primary-hover disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+              className="w-full bg-primary text-white py-3 rounded-lg font-bold hover:bg-primary-hover disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
             >
-              {isUpdating ? 'جاري الإنشاء...' : t('confirmAndCreateInvoice')}
+              {isUpdating ? <><ButtonSpinner /> {t('creatingInvoice')}</> : t('confirmAndCreateInvoice')}
             </button>
           </div>
         </form>

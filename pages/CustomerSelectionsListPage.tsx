@@ -4,7 +4,7 @@ import { CustomerSelection } from '../types';
 import { useNavigate } from 'react-router-dom';
 
 const CustomerSelectionsListPage: React.FC = () => {
-    const { customerSelections, processSelection, t, formatCurrency, formatDate, formatNumber, isUpdating } = useAppContext();
+    const { customerSelections, t, formatCurrency, formatDateTime, formatNumber } = useAppContext();
     const navigate = useNavigate();
 
     const pendingSelections = useMemo(() => {
@@ -13,11 +13,8 @@ const CustomerSelectionsListPage: React.FC = () => {
             .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }, [customerSelections]);
 
-    const handleConvertToInvoice = async (selection: CustomerSelection) => {
-        const success = await processSelection(selection.id);
-        if (success) {
-          navigate('/admin/new-order', { state: { selection } });
-        }
+    const handleConvertToInvoice = (selection: CustomerSelection) => {
+        navigate('/admin/new-order', { state: { selection } });
     };
 
     return (
@@ -44,12 +41,12 @@ const CustomerSelectionsListPage: React.FC = () => {
                                     <div>
                                         <h3 className="font-bold text-lg text-accent">{t('selectionFrom')} {selection.customerName}</h3>
                                         {selection.customerPhone && <p className="text-sm text-text-secondary">{selection.customerPhone}</p>}
-                                        <p className="text-xs text-text-secondary mt-1">{formatDate(selection.createdAt)}</p>
+                                        {selection.customerAddress && <p className="text-sm text-text-secondary">{selection.customerAddress}</p>}
+                                        <p className="text-xs text-text-secondary mt-1">{formatDateTime(selection.createdAt)}</p>
                                     </div>
                                     <button 
                                         onClick={() => handleConvertToInvoice(selection)}
-                                        disabled={isUpdating}
-                                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary-hover disabled:bg-gray-400 dark:disabled:bg-gray-600"
+                                        className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary-hover"
                                     >
                                         {t('convertToInvoice')}
                                     </button>

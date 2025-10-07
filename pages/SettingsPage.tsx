@@ -96,6 +96,25 @@ const SettingsPage: React.FC = () => {
 
                 </div>
             </div>
+
+            <div className="mt-12">
+                <h2 className="text-2xl font-bold text-text-primary">{t('notifications')}</h2>
+                <p className="mt-1 text-text-secondary">{t('notificationsDescription')}</p>
+            </div>
+            <div className="bg-card rounded-xl shadow-lg p-6 sm:p-8 mt-4">
+                <div className="space-y-4">
+                    <p className="text-text-primary font-semibold">{t('notificationsInstructionsTitle')}</p>
+                    <ol className="list-decimal list-inside space-y-2 text-text-secondary text-sm rtl:pr-4">
+                        <li>{t('notificationsInstructionsStep1')}</li>
+                        <li>{t('notificationsInstructionsStep2')}</li>
+                        <li>{t('notificationsInstructionsStep3')}</li>
+                        <li>{t('notificationsInstructionsStep4')}</li>
+                    </ol>
+                    <div className="p-3 bg-card-secondary rounded-md text-xs text-text-secondary border border-border">
+                      <p>{t('notificationsNote')}</p>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };

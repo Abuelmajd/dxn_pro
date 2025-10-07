@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
@@ -9,6 +10,12 @@ const DxnLogo = () => (
         alt="DXN App Logo"
         className="h-10 w-auto rounded-2xl"
     />
+);
+
+const SyncIcon: React.FC<{ isSyncing: boolean }> = ({ isSyncing }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${isSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 4a8 8 0 0113.856 5.292M20 20a8 8 0 01-13.856-5.292" />
+    </svg>
 );
 
 const SettingsIcon = () => (
@@ -43,7 +50,7 @@ const XIcon = () => (
 );
 
 const Header: React.FC = () => {
-  const { t, customerSelections, logout, settings, formatNumber, exchangeRate, isRateLoading } = useAppContext();
+  const { t, customerSelections, logout, settings, formatNumber, exchangeRate, isRateLoading, isRefreshing } = useAppContext();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pendingCount = customerSelections.filter(s => s.status === 'pending').length;
@@ -120,9 +127,19 @@ const Header: React.FC = () => {
               </div>
             </div>
             
-            {/* Desktop Nav */}
+            {/* Desktop Nav - Centered */}
             <div className="hidden md:flex items-center space-s-4">
               {renderNavLinks(false)}
+            </div>
+
+            {/* Right side controls */}
+            <div className="hidden md:flex items-center space-s-4">
+              {isRefreshing && (
+                <div className="flex items-center gap-2 text-accent p-2 animate-pulse" aria-live="polite">
+                  <SyncIcon isSyncing={true} />
+                  <span className="text-sm font-medium">{t('refreshData')}...</span>
+                </div>
+              )}
               <ThemeToggle className="text-text-primary hover:text-accent transition-colors p-2 rounded-full hover:bg-card-secondary" />
               <NavLink to="/admin/setup-check" title={t('setupCheck')} className="text-text-primary hover:text-accent transition-colors p-2 rounded-full hover:bg-card-secondary">
                 <ChecklistIcon />
@@ -161,6 +178,11 @@ const Header: React.FC = () => {
                     {renderNavLinks(true)}
                 </nav>
                 <div className="p-4 mt-4 border-t border-border space-y-2">
+                    {isRefreshing && (
+                        <div className="w-full flex items-center gap-3 text-accent p-3 rounded-md animate-pulse" aria-live="polite">
+                            <SyncIcon isSyncing={true} /> <span>{t('refreshData')}...</span>
+                        </div>
+                    )}
                     <NavLink to="/admin/setup-check" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 text-text-primary hover:bg-card-secondary p-3 rounded-md">
                         <ChecklistIcon /> <span>{t('setupCheck')}</span>
                     </NavLink>

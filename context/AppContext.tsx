@@ -1,4 +1,5 @@
-import React, { createContext, useState, useContext, ReactNode, useEffect, useMemo } from 'react';
+
+import React, { createContext, useState, useContext, ReactNode, useEffect, useMemo, useCallback } from 'react';
 import { Product, Order, CartItem, Customer, AppSettings, Language, NumberFormat, Currency, Expense, CustomerSelection, Category, HealthCheckResult } from '../types';
 import { translations, TranslationKeys } from '../translations';
 
@@ -31,6 +32,7 @@ interface AppContextType {
   isRateLoading: boolean;
   isLoading: boolean; // For initial data load
   isUpdating: boolean; // For create/update/delete operations
+  isRefreshing: boolean; // For manual data sync
   apiError: string | null;
   login: (username: string, password: string) => boolean;
   logout: () => void;
@@ -40,7 +42,8 @@ interface AppContextType {
   formatNumber: (num: number) => string;
   formatInteger: (num: number) => string;
   formatDate: (date: Date) => string;
-  addOrder: (customerData: Omit<Customer, 'id'>, items: CartItem[]) => Promise<boolean>;
+  formatDateTime: (date: Date) => string;
+  addOrder: (customerData: Omit<Customer, 'id' | 'registrationDate'>, items: CartItem[], selectionId?: string | null) => Promise<boolean>;
   addProduct: (productData: AddProductData) => Promise<boolean>;
   updateProduct: (productData: Product) => Promise<boolean>;
   deleteProduct: (productId: string) => Promise<{ success: boolean; error?: string }>;
@@ -55,6 +58,7 @@ interface AppContextType {
   getCustomerById: (id: string) => Customer | undefined;
   getCategoryNameById: (categoryId: string) => string;
   runHealthCheck: () => Promise<HealthCheckResult[]>;
+  fetchData: (isInitialLoad?: boolean) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -87,13 +91,14 @@ const parseData = (data: any) => {
       ...item,
       ...(item.createdAt && { createdAt: new Date(item.createdAt) }),
       ...(item.date && { date: new Date(item.date) }),
+      ...(item.registrationDate && { registrationDate: new Date(item.registrationDate) }),
     }));
   };
   
   return {
     products: data.products || [],
     orders: (parseWithDates<Order>(data.orders || [])).sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime()),
-    customers: data.customers || [],
+    customers: parseWithDates<Customer>(data.customers || []),
     expenses: (parseWithDates<Expense>(data.expenses || [])).sort((a,b) => b.date.getTime() - a.date.getTime()),
     customerSelections: parseWithDates<CustomerSelection>(data.customerSelections || []),
     categories: data.categories || [],
@@ -129,6 +134,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isRateLoading, setIsRateLoading] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
   // Memoize products to dynamically apply the profit margin from settings
@@ -142,7 +148,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }));
   }, [rawProducts, settings.profitMarginILS]);
 
-  const callGoogleScript = async (action: string, payload?: any) => {
+  const callGoogleScript = useCallback(async (action: string, payload?: any) => {
     setApiError(null);
     try {
       const response = await fetch(GOOGLE_SCRIPT_URL, {
@@ -170,10 +176,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setApiError(error.message || 'Failed to communicate with the server.');
       return null;
     }
-  };
+  }, []);
   
-  const fetchData = async () => {
-    setIsLoading(true);
+  const fetchData = useCallback(async (isInitialLoad = false) => {
+    if (isInitialLoad) setIsLoading(true);
+    else setIsRefreshing(true);
+
     const data = await callGoogleScript('getAllData');
     if (data) {
       const parsed = parseData(data);
@@ -184,12 +192,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCustomerSelections(parsed.customerSelections);
       setCategories(parsed.categories);
     }
-    setIsLoading(false);
-  };
+    if (isInitialLoad) setIsLoading(false);
+    else setIsRefreshing(false);
+  }, [callGoogleScript]);
   
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(true);
+  }, [fetchData]);
   
   useEffect(() => {
     const fetchRate = async () => {
@@ -203,7 +212,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsRateLoading(false);
     };
     fetchRate();
-  }, []);
+  }, [callGoogleScript]);
 
   useEffect(() => {
     saveLocalState('appSettings', settings);
@@ -292,29 +301,73 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       numberingSystem: settings.numberFormat === 'ar' ? 'arab' : 'latn',
     });
   }
-  
-  const handleGenericUpdate = async (action: string, payload: any, dataToRefetch: ('products'|'orders'|'customers'|'expenses'|'customerSelections')[] = []) => {
-    setIsUpdating(true);
-    const result = await callGoogleScript(action, payload);
-    // A successful call might return `undefined` if no data is sent back, while a failed call returns `null`.
-    // We check for `null` to determine if the call failed.
-    if (result !== null) {
-      await fetchData(); 
-    }
-    setIsUpdating(false);
-    return result !== null;
+
+  const formatDateTime = (date: Date): string => {
+    const langLocale = settings.language === 'ar' ? 'ar-SA' : 'en-US';
+    return new Date(date).toLocaleString(langLocale, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      calendar: 'gregory',
+      numberingSystem: settings.numberFormat === 'ar' ? 'arab' : 'latn',
+    });
   }
   
-  const addOrder = async (customerData: Omit<Customer, 'id'>, items: CartItem[]) => {
-    return handleGenericUpdate('addOrder', { customerData, items }, ['orders', 'customers']);
+  const addOrder = async (customerData: Omit<Customer, 'id' | 'registrationDate'>, items: CartItem[], selectionId: string | null = null) => {
+    setIsUpdating(true);
+    const result = await callGoogleScript('addOrder', { customerData, items, selectionId });
+    setIsUpdating(false);
+    if (result) {
+        const newOrderWithDate = { ...result.newOrder, createdAt: new Date(result.newOrder.createdAt) };
+        setOrders(prev => [newOrderWithDate, ...prev].sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime()));
+        setCustomers(prev => {
+            const index = prev.findIndex(c => c.id === result.updatedCustomer.id);
+            const updatedCustomerWithDate = {
+              ...result.updatedCustomer,
+              registrationDate: new Date(result.updatedCustomer.registrationDate),
+            };
+            if (index > -1) {
+                const newCustomers = [...prev];
+                newCustomers[index] = updatedCustomerWithDate;
+                return newCustomers;
+            } else {
+                return [...prev, updatedCustomerWithDate];
+            }
+        });
+        
+        if (selectionId && result.processedSelectionId === selectionId) {
+            setCustomerSelections(prev => prev.map(s => 
+                s.id === selectionId ? { ...s, status: 'processed' } : s
+            ));
+        }
+
+        return true;
+    }
+    return false;
   };
 
   const addProduct = async (productData: AddProductData) => {
-    return handleGenericUpdate('addProduct', productData, ['products']);
+    setIsUpdating(true);
+    const newProduct = await callGoogleScript('addProduct', productData);
+    setIsUpdating(false);
+    if (newProduct) {
+        setRawProducts(prev => [...prev, newProduct]);
+        return true;
+    }
+    return false;
   };
   
   const updateProduct = async (productData: Product) => {
-    return handleGenericUpdate('updateProduct', productData, ['products']);
+    setIsUpdating(true);
+    const updatedProduct = await callGoogleScript('updateProduct', productData);
+    setIsUpdating(false);
+    if (updatedProduct) {
+        setRawProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+        return true;
+    }
+    return false;
   };
 
   const deleteProduct = async (productId: string): Promise<{ success: boolean; error?: string }> => {
@@ -334,17 +387,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const result = await response.json();
 
         if (result.status === 'success') {
-            await fetchData(); // Refetch data on success
+            setRawProducts(prev => prev.filter(p => p.id !== productId)); // Optimistic update
             setIsUpdating(false);
             return { success: true };
         } else {
-            // This is a "soft" error from the backend (e.g., product in use).
             setIsUpdating(false);
             return { success: false, error: result.message };
         }
 
     } catch (error: any) {
-        // This is a "hard" network or parsing error.
         console.error('Google Script API call failed for deleteProduct:', error);
         setApiError(error.message || 'Failed to communicate with the server.');
         setIsUpdating(false);
@@ -354,31 +405,79 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
 
   const toggleProductAvailability = async (productId: string) => {
-    return handleGenericUpdate('toggleProductAvailability', { productId }, ['products']);
+    setIsUpdating(true);
+    const result = await callGoogleScript('toggleProductAvailability', { productId });
+    setIsUpdating(false);
+    if (result) {
+        setRawProducts(prev => prev.map(p => p.id === result.productId ? { ...p, isAvailable: result.isAvailable } : p));
+        return true;
+    }
+    return false;
   };
 
   const deleteOrder = async (orderId: string) => {
-    return handleGenericUpdate('deleteOrder', { orderId }, ['orders']);
+    setIsUpdating(true);
+    const result = await callGoogleScript('deleteOrder', { orderId });
+    setIsUpdating(false);
+    if (result) {
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+        return true;
+    }
+    return false;
   }
 
   const deleteCustomer = async (customerId: string) => {
-    return handleGenericUpdate('deleteCustomer', { customerId }, ['customers', 'orders']);
+    setIsUpdating(true);
+    const result = await callGoogleScript('deleteCustomer', { customerId });
+    setIsUpdating(false);
+    if (result) {
+        setCustomers(prev => prev.filter(c => c.id !== customerId));
+        setOrders(prev => prev.filter(o => o.customerId !== customerId)); // Also remove their orders from local state
+        return true;
+    }
+    return false;
   }
 
   const addExpense = async (expenseData: Omit<Expense, 'id' | 'date'> & { date: Date }) => {
-    return handleGenericUpdate('addExpense', expenseData, ['expenses']);
+    setIsUpdating(true);
+    const newExpense = await callGoogleScript('addExpense', expenseData);
+    setIsUpdating(false);
+    if (newExpense) {
+        const newExpenseWithDate = { ...newExpense, date: new Date(newExpense.date) };
+        setExpenses(prev => [...prev, newExpenseWithDate].sort((a, b) => b.date.getTime() - a.date.getTime()));
+        return true;
+    }
+    return false;
   };
   
   const deleteExpense = async (expenseId: string) => {
-    return handleGenericUpdate('deleteExpense', { expenseId }, ['expenses']);
+    setIsUpdating(true);
+    const result = await callGoogleScript('deleteExpense', { expenseId });
+    setIsUpdating(false);
+    if (result) {
+        setExpenses(prev => prev.filter(e => e.id !== expenseId));
+        return true;
+    }
+    return false;
   };
   
   const addCustomerSelection = async (selectionData: Omit<CustomerSelection, 'id' | 'createdAt' | 'status'>) => {
-     return handleGenericUpdate('addCustomerSelection', selectionData, ['customerSelections']);
+    setIsUpdating(true);
+    const result = await callGoogleScript('addCustomerSelection', selectionData);
+    setIsUpdating(false);
+    // No optimistic update needed here as it navigates to a success page.
+    return result !== null;
   };
   
   const processSelection = async (selectionId: string) => {
-    return handleGenericUpdate('processSelection', { selectionId }, ['customerSelections']);
+    setIsUpdating(true);
+    const result = await callGoogleScript('processSelection', { selectionId });
+    setIsUpdating(false);
+    if (result) {
+        setCustomerSelections(prev => prev.map(s => s.id === selectionId ? { ...s, status: 'processed' } : s));
+        return true;
+    }
+    return false;
   };
   
   const runHealthCheck = async (): Promise<HealthCheckResult[]> => {
@@ -403,6 +502,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     isRateLoading,
     isLoading,
     isUpdating,
+    isRefreshing,
     apiError,
     login,
     logout,
@@ -412,6 +512,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     formatNumber,
     formatInteger,
     formatDate,
+    formatDateTime,
     addOrder,
     addProduct,
     updateProduct,
@@ -427,6 +528,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     getCustomerById,
     getCategoryNameById,
     runHealthCheck,
+    fetchData,
   };
 
   return (

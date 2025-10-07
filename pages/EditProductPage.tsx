@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { Product } from '../types';
+import ButtonSpinner from '../components/ButtonSpinner';
 
 const resizeImage = (file: File, maxSize: number): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -78,9 +79,14 @@ const EditProductPage: React.FC = () => {
         setImageUrl(existingProduct.imageUrl);
         setPoints(existingProduct.points || 0);
         
-        if (exchangeRate > 0) {
+        // Prioritize using saved USD prices if they exist
+        if (existingProduct.normalPriceUSD && existingProduct.memberPriceUSD) {
+            setNormalPriceUSD(existingProduct.normalPriceUSD);
+            setMemberPriceUSD(existingProduct.memberPriceUSD);
+        } else if (exchangeRate > 0) {
+            // Fallback for older products: reverse calculate from ILS price
             const profitMargin = settings.profitMarginILS ?? 0;
-            // Reverse calculation: The price from getProductById includes the profit margin.
+            // The price from getProductById includes the profit margin.
             // We must subtract it to get the base ILS price before converting back to USD.
             // Formula: ((Final ILS Price - Profit Margin ILS) / Exchange Rate) - 0.50 USD
             const baseMemberPriceILS = existingProduct.memberPrice - profitMargin;
@@ -121,14 +127,14 @@ const EditProductPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!name || !categoryId || memberPriceUSD <= 0 || normalPriceUSD <= 0) {
+    if (!name || !categoryId || !description || memberPriceUSD <= 0 || normalPriceUSD <= 0) {
       setError(t('errorFillAllFields'));
       return;
     }
     
     setError('');
 
-    // 1. Add $0.50 margin to the input USD price.
+    // 1. Add $0.50 margin to the input USD price for ILS conversion.
     const finalNormalPriceUSD = normalPriceUSD + 0.50;
     const finalMemberPriceUSD = memberPriceUSD + 0.50;
 
@@ -145,6 +151,8 @@ const EditProductPage: React.FC = () => {
       description,
       price: baseNormalPriceILS, // Save base price (without profit margin)
       memberPrice: baseMemberPriceILS, // Save base price (without profit margin)
+      normalPriceUSD: normalPriceUSD, // Save base USD price
+      memberPriceUSD: memberPriceUSD, // Save base USD price
       points: points || 0,
       imageUrl: imageUrl || `https://picsum.photos/seed/${name.replace(/\s/g, '')}/400/300`,
     });
@@ -200,7 +208,7 @@ const EditProductPage: React.FC = () => {
 
           <div>
             <label htmlFor="description" className="block text-sm font-medium text-text-primary mb-1">{t('descriptionOptional')}</label>
-            <textarea id="description" value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent"></textarea>
+            <textarea id="description" value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent" required></textarea>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -249,8 +257,8 @@ const EditProductPage: React.FC = () => {
              <button type="button" onClick={() => navigate('/admin/products')} className="px-6 py-2 rounded-md text-sm font-medium bg-card-secondary text-text-primary hover:bg-border transition-colors">
                 {t('cancel')}
               </button>
-              <button type="submit" disabled={isUpdating} className="px-6 py-2 rounded-md text-sm font-medium text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors">
-                {isUpdating ? t('saving') : t('saveChanges')}
+              <button type="submit" disabled={isUpdating} className="px-6 py-2 rounded-md text-sm font-medium text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
+                {isUpdating ? <><ButtonSpinner />{t('saving')}</> : t('saveChanges')}
               </button>
           </div>
         </form>

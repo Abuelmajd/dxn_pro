@@ -1,9 +1,18 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { CartItem, Product } from '../types';
 import { Link } from 'react-router-dom';
 import ProductDetailModal from '../components/ProductDetailModal';
 import ThemeToggle from '../components/ThemeToggle';
+import ButtonSpinner from '../components/ButtonSpinner';
+import Footer from '../components/Footer';
+
+const SyncIcon: React.FC<{ isSyncing: boolean }> = ({ isSyncing }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${isSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 4a8 8 0 0113.856 5.292M20 20a8 8 0 01-13.856-5.292" />
+    </svg>
+);
 
 const ProductSelectionCard: React.FC<{ 
     product: Product, 
@@ -67,11 +76,12 @@ const ProductSelectionCard: React.FC<{
 
 
 const CustomerSelectionPage: React.FC = () => {    
-  const { products, categories, addCustomerSelection, t, formatCurrency, formatInteger, isUpdating } = useAppContext();
+  const { products, categories, addCustomerSelection, t, formatCurrency, formatInteger, isUpdating, isRefreshing } = useAppContext();
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
@@ -88,17 +98,15 @@ const CustomerSelectionPage: React.FC = () => {
       setCustomerName('');
       setCustomerPhone('');
       setCustomerEmail('');
+      setCustomerAddress('');
   }
 
-  useEffect(() => {
-    if (isSubmitted) {
-        const timer = setTimeout(() => {
-            handleReset();
-        }, 4000); // Automatically return after 4 seconds
-        return () => clearTimeout(timer);
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, ''); // Remove non-digit characters
+    if (value.length <= 10) { // Limit to 10 digits
+        setCustomerPhone(value);
     }
-  }, [isSubmitted]);
-
+  };
 
   const updateQuantity = (productId: string, quantity: number) => {
     setCart(prevCart => {
@@ -113,7 +121,7 @@ const CustomerSelectionPage: React.FC = () => {
             name: productToAdd.name, 
             price: productToAdd.price, 
             quantity: quantity,
-            points: productToAdd.points || 0,
+            points: productToAdd.points,
         }];
       } else if (existingItem && quantity <= 0) {
         // Remove item
@@ -134,8 +142,8 @@ const CustomerSelectionPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName.trim() || !customerPhone.trim()) {
-        setError(t('errorCustomerNamePhoneSelection'));
+    if (!customerName.trim() || !customerPhone.trim() || !customerEmail.trim() || !customerAddress.trim()) {
+        setError(t('errorFillAllFields'));
         return;
     }
     if (cart.length === 0) {
@@ -148,6 +156,7 @@ const CustomerSelectionPage: React.FC = () => {
         customerName,
         customerPhone,
         customerEmail,
+        customerAddress,
         items: cart,
     });
     
@@ -167,24 +176,28 @@ const CustomerSelectionPage: React.FC = () => {
 
   if (isSubmitted) {
       return (
-          <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+          <div className="flex flex-col min-h-screen bg-background">
+            <main className="flex-grow flex items-center justify-center p-4">
               <div className="max-w-md mx-auto text-center bg-card rounded-xl shadow-lg p-8">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <h1 className="text-2xl font-bold mt-4 text-text-primary">{t('selectionSubmittedSuccessfully')}</h1>
-                  <p className="text-text-secondary mt-2">سيقوم التاجر بالتواصل معك قريباً.</p>
+                  <p className="text-text-secondary mt-2">{t('selectionSubmittedSubtitle')}</p>
                   <button onClick={handleReset} className="mt-6 w-full bg-primary text-white py-3 rounded-lg font-bold hover:bg-primary-hover transition-colors">
                       {t('backToSelection')}
                   </button>
               </div>
+            </main>
+            <Footer />
           </div>
       )
   }
 
   if (view === 'checkout') {
     return (
-        <div className="max-w-2xl mx-auto my-8 p-4 bg-background">
+        <div className="flex flex-col min-h-screen bg-background">
+          <main className="flex-grow max-w-2xl mx-auto my-8 p-4 w-full">
             <div className="bg-card rounded-xl shadow-lg p-6">
                 <div className="flex items-center justify-between border-b pb-4 border-border">
                     <h1 className="text-2xl font-bold text-text-primary">{t('invoiceSummary')}</h1>
@@ -201,11 +214,15 @@ const CustomerSelectionPage: React.FC = () => {
                         </div>
                         <div>
                             <label htmlFor="phone" className="block text-sm font-medium text-text-secondary mb-1">{t('yourPhone')}</label>
-                            <input type="tel" name="phone" id="phone" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent text-text-primary" required />
+                            <input type="tel" name="phone" id="phone" value={customerPhone} onChange={handlePhoneChange} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent text-text-primary" required pattern="[0-9]{10}" title={t('phone_10_digits_error')} placeholder="05..." />
                         </div>
                          <div>
                             <label htmlFor="email" className="block text-sm font-medium text-text-secondary mb-1">{t('yourEmailOptional')}</label>
-                            <input type="email" name="email" id="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent text-text-primary" />
+                            <input type="email" name="email" id="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent text-text-primary" required title={t('email_invalid_error')} />
+                        </div>
+                        <div>
+                            <label htmlFor="address" className="block text-sm font-medium text-text-secondary mb-1">{t('addressOptional')}</label>
+                            <textarea name="address" id="address" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} rows={2} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent text-text-primary" required />
                         </div>
                     </div>
                     <div className="space-y-4 max-h-80 overflow-y-auto pr-2 rtl:pr-0 rtl:pl-2 border-t border-border pt-6">
@@ -233,101 +250,110 @@ const CustomerSelectionPage: React.FC = () => {
                         </div>
                     )}
                     {error && <p className="text-red-500 text-sm mt-4 text-center">{error}</p>}
-                    <button type="submit" disabled={isUpdating || cart.length === 0 || !customerName || !customerPhone} className="mt-6 w-full bg-primary text-white py-3 rounded-lg font-bold hover:bg-primary-hover disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors">
-                        {isUpdating ? 'جاري الإرسال...' : t('submitSelection')}
+                    <button type="submit" disabled={isUpdating || cart.length === 0 || !customerName || !customerPhone || !customerEmail || !customerAddress} className="mt-6 w-full bg-primary text-white py-3 rounded-lg font-bold hover:bg-primary-hover disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
+                        {isUpdating ? <><ButtonSpinner /> {t('submittingSelection')}</> : t('submitSelection')}
                     </button>
                 </form>
             </div>
+          </main>
+          <Footer />
         </div>
     );
   }
 
   return (
-    <>
-    {selectedProduct && (
-        <ProductDetailModal 
-            product={selectedProduct}
-            onClose={() => setSelectedProduct(null)}
-            onAddToCart={(product) => {
-                updateQuantity(product.id, 1);
-                setSelectedProduct(null);
-            }}
-        />
-    )}
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 bg-background">
-        <div className="text-end py-4 flex items-center justify-end gap-4">
-            <ThemeToggle className="text-text-primary hover:text-accent transition-colors hover:bg-card-secondary" />
-            <Link to="/login" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-text-primary bg-card/80 hover:bg-card focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent">
-                {t('merchantLogin')}
-            </Link>
-        </div>
-        <div className="text-center mb-8 mt-4">
-            <img 
-                src="https://lh3.googleusercontent.com/d/1JVW882aiQIHcc91tEhn9_fOjRSOJFkS8" 
-                alt="DXN App Logo" 
-                className="h-24 w-auto mx-auto mb-6 rounded-3xl"
-            />
-            <h1 className="text-4xl font-bold tracking-tight text-text-primary sm:text-5xl">{t('productSelectionPage')}</h1>
-            <p className="mt-4 text-lg leading-8 text-text-secondary">{t('selectYourProducts')}</p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-4 mb-8">
-            <input
-            type="text"
-            placeholder={t('searchForProduct')}
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="flex-grow p-3 bg-card text-text-primary placeholder-text-secondary rounded-lg shadow-sm border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
-            />
-            <select
-                value={selectedCategoryId}
-                onChange={e => setSelectedCategoryId(e.target.value)}
-                className="sm:w-1/3 p-3 bg-card text-text-primary rounded-lg shadow-sm border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
-            >
-                <option value="">{t('allCategories')}</option>
-                {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-            </select>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-          {filteredProducts.map(p => {
-            const itemInCart = cart.find(item => item.productId === p.id);
-            const quantityInCart = itemInCart ? itemInCart.quantity : 0;
-            return (
-              <ProductSelectionCard 
-                  key={p.id} 
-                  product={p} 
-                  onViewDetails={setSelectedProduct}
-                  quantityInCart={quantityInCart}
-                  onUpdateQuantity={updateQuantity}
+    <div className="flex flex-col min-h-screen bg-background">
+      {selectedProduct && (
+          <ProductDetailModal 
+              product={selectedProduct}
+              onClose={() => setSelectedProduct(null)}
+              onAddToCart={(product) => {
+                  updateQuantity(product.id, 1);
+                  setSelectedProduct(null);
+              }}
+          />
+      )}
+      <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 w-full bg-background">
+          <div className="text-end py-4 flex items-center justify-end gap-4">
+              {isRefreshing && (
+                <div className="flex items-center gap-2 text-accent animate-pulse" aria-live="polite">
+                  <SyncIcon isSyncing={true} />
+                  <span className="text-sm font-medium">{t('refreshData')}...</span>
+                </div>
+              )}
+              <ThemeToggle className="text-text-primary hover:text-accent transition-colors hover:bg-card-secondary" />
+              <Link to="/login" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-text-primary bg-card/80 hover:bg-card focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent">
+                  {t('merchantLogin')}
+              </Link>
+          </div>
+          <div className="text-center mb-8 mt-4">
+              <img 
+                  src="https://lh3.googleusercontent.com/d/1JVW882aiQIHcc91tEhn9_fOjRSOJFkS8" 
+                  alt="DXN App Logo" 
+                  className="h-24 w-auto mx-auto mb-6 rounded-3xl"
               />
-            );
-          })}
-        </div>
+              <h1 className="text-4xl font-bold tracking-tight text-text-primary sm:text-5xl">{t('productSelectionPage')}</h1>
+              <p className="mt-4 text-lg leading-8 text-text-secondary">{t('selectYourProducts')}</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-4 mb-8">
+              <input
+              type="text"
+              placeholder={t('searchForProduct')}
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="flex-grow p-3 bg-card text-text-primary placeholder-text-secondary rounded-lg shadow-sm border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
+              />
+              <select
+                  value={selectedCategoryId}
+                  onChange={e => setSelectedCategoryId(e.target.value)}
+                  className="sm:w-1/3 p-3 bg-card text-text-primary rounded-lg shadow-sm border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
+              >
+                  <option value="">{t('allCategories')}</option>
+                  {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+              </select>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            {filteredProducts.map(p => {
+              const itemInCart = cart.find(item => item.productId === p.id);
+              const quantityInCart = itemInCart ? itemInCart.quantity : 0;
+              return (
+                <ProductSelectionCard 
+                    key={p.id} 
+                    product={p} 
+                    onViewDetails={setSelectedProduct}
+                    quantityInCart={quantityInCart}
+                    onUpdateQuantity={updateQuantity}
+                />
+              );
+            })}
+          </div>
 
-        {cart.length > 0 && (
-            <div className="fixed bottom-4 right-4 rtl:right-auto rtl:left-4 z-50">
-                <button 
-                    onClick={() => setView('checkout')}
-                    className="bg-primary text-white rounded-full shadow-lg p-3 sm:p-4 hover:bg-primary-hover transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent"
-                >
-                    <div className="flex items-center gap-3 sm:gap-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 sm:h-8 sm:w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-                        </svg>
-                        <div className="text-left rtl:text-right">
-                            <div className="font-bold text-base sm:text-lg">{formatCurrency(totalPrice)}</div>
-                            <div className="text-xs sm:text-sm">{formatInteger(totalItems)} {t('products')}</div>
-                        </div>
-                        <div className="ps-2 hidden sm:block">
-                           <span className="font-semibold">{t('proceedToCheckout')}</span>
-                        </div>
-                    </div>
-                </button>
-            </div>
-        )}
-    </main>
-    </>
+          {cart.length > 0 && (
+              <div className="fixed bottom-4 right-4 rtl:right-auto rtl:left-4 z-50">
+                  <button 
+                      onClick={() => setView('checkout')}
+                      className="bg-primary text-white rounded-full shadow-lg p-3 sm:p-4 hover:bg-primary-hover transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent"
+                  >
+                      <div className="flex items-center gap-3 sm:gap-4">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 sm:h-8 sm:w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                          </svg>
+                          <div className="text-left rtl:text-right">
+                              <div className="font-bold text-base sm:text-lg">{formatCurrency(totalPrice)}</div>
+                              <div className="text-xs sm:text-sm">{formatInteger(totalItems)} {t('products')}</div>
+                          </div>
+                          <div className="ps-2 hidden sm:block">
+                             <span className="font-semibold">{t('proceedToCheckout')}</span>
+                          </div>
+                      </div>
+                  </button>
+              </div>
+          )}
+      </main>
+      <Footer />
+    </div>
   );
 };
 

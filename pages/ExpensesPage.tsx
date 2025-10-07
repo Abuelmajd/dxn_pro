@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Expense } from '../types';
+import ButtonSpinner from '../components/ButtonSpinner';
 
 const ExpensesPage: React.FC = () => {
     const { expenses, addExpense, deleteExpense, t, formatCurrency, formatNumber, settings, isUpdating } = useAppContext();
@@ -93,8 +94,8 @@ const ExpensesPage: React.FC = () => {
                     </div>
                     {error && <p className="text-red-500 text-sm">{error}</p>}
                     <div className="text-end">
-                        <button type="submit" disabled={isUpdating} className="px-6 py-2 rounded-md text-sm font-medium text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-gray-400 dark:disabled:bg-gray-600">
-                            {isUpdating ? 'جاري الإضافة...' : t('addExpense')}
+                        <button type="submit" disabled={isUpdating} className="px-6 py-2 rounded-md text-sm font-medium text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-gray-400 dark:disabled:bg-gray-600 flex items-center justify-center">
+                            {isUpdating ? <><ButtonSpinner /> {t('addingExpense')}</> : t('addExpense')}
                         </button>
                     </div>
                 </form>

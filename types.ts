@@ -17,10 +17,11 @@ export interface AppSettings {
 export interface Customer {
   id: string;
   name: string;
-  address: string;
   phone: string;
   whatsapp: string;
-  email?: string;
+  email: string;
+  address: string;
+  registrationDate: Date;
 }
 
 export interface Category {
@@ -33,10 +34,12 @@ export interface Product {
   name: string;
   categoryId: string;
   description: string;
-  price: number; // Normal Price in ILS
-  memberPrice: number; // Member Price in ILS
+  price: number; // Base Normal Price in ILS (without profit margin)
+  memberPrice: number; // Base Member Price in ILS (without profit margin)
+  normalPriceUSD: number; // Base Normal Price in USD (without $0.50 margin)
+  memberPriceUSD: number; // Base Member Price in USD (without $0.50 margin)
   imageUrl: string;
-  isAvailable?: boolean;
+  isAvailable: boolean;
   points: number;
 }
 
@@ -63,8 +66,8 @@ export interface Expense {
     description: string;
     amount: number;
     date: Date;
+    // Fix: Add optional properties for product purchase expenses to resolve type errors in ExpensesPage.
     isProductPurchase?: boolean;
-    productName?: string;
     quantityPurchased?: number;
     purchasePricePerItem?: number;
 }
@@ -73,7 +76,8 @@ export interface CustomerSelection {
   id: string;
   customerName: string;
   customerPhone: string;
-  customerEmail?: string;
+  customerEmail: string;
+  customerAddress: string;
   items: CartItem[];
   createdAt: Date;
   status: 'pending' | 'processed';
