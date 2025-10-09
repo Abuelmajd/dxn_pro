@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { CartItem, Product } from '../types';
@@ -7,6 +6,7 @@ import ProductDetailModal from '../components/ProductDetailModal';
 import ThemeToggle from '../components/ThemeToggle';
 import ButtonSpinner from '../components/ButtonSpinner';
 import Footer from '../components/Footer';
+import AddressDropdown from '../components/AddressDropdown';
 
 const SyncIcon: React.FC<{ isSyncing: boolean }> = ({ isSyncing }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${isSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -21,8 +21,15 @@ const ProductSelectionCard: React.FC<{
     onUpdateQuantity: (productId: string, newQuantity: number) => void
 }> = ({ product, onViewDetails, quantityInCart, onUpdateQuantity }) => {
     const { t, formatCurrency, getCategoryNameById, formatInteger } = useAppContext();
+    const hasDiscount = !!product.discountPercentage && typeof product.originalPrice === 'number';
+
     return (
-        <div className="bg-card rounded-lg shadow-md overflow-hidden transition-transform hover:scale-105 flex flex-col group">
+        <div className="bg-card rounded-lg shadow-md overflow-hidden transition-transform hover:scale-105 flex flex-col group relative">
+            {hasDiscount && (
+                <div className="absolute top-2 right-2 rtl:right-auto rtl:left-2 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full z-10 shadow-lg">
+                    -{formatInteger(product.discountPercentage!)}%
+                </div>
+            )}
             <button 
               onClick={() => onViewDetails(product)} 
               className="text-left w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-t-lg"
@@ -34,12 +41,16 @@ const ProductSelectionCard: React.FC<{
             </button>
             <div className="p-4 flex-grow flex flex-col">
                 <button onClick={() => onViewDetails(product)} className="text-right w-full focus:outline-none">
-                     <h3 className="font-bold text-lg text-text-primary group-hover:text-accent transition-colors">{product.name}</h3>
+                     <h3 className="font-bold text-lg text-text-primary group-hover:text-accent transition-colors min-h-[2.5rem]">{product.name}</h3>
                     <p className="text-sm text-text-secondary">{getCategoryNameById(product.categoryId)}</p>
                 </button>
-                <div className="mt-4 flex-grow flex items-end">
-                    {/* The displayed price is the final ILS price, calculated according to the new pricing logic (USD + $0.50 -> ILS + 20 ILS + rounding) */}
-                    <p className="text-xl font-semibold text-accent">{formatCurrency(product.price)}</p>
+                <div className="mt-4 flex-grow flex items-end justify-start rtl:justify-end">
+                    <div className="flex items-baseline gap-2">
+                        <p className="text-xl font-semibold text-accent">{formatCurrency(product.price)}</p>
+                        {hasDiscount && (
+                            <p className="text-sm text-text-secondary line-through">{formatCurrency(product.originalPrice!)}</p>
+                        )}
+                    </div>
                 </div>
                  <div className="mt-4">
                     {quantityInCart === 0 ? (
@@ -106,6 +117,10 @@ const CustomerSelectionPage: React.FC = () => {
     if (value.length <= 10) { // Limit to 10 digits
         setCustomerPhone(value);
     }
+  };
+
+  const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setCustomerAddress(e.target.value);
   };
 
   const updateQuantity = (productId: string, quantity: number) => {
@@ -220,10 +235,14 @@ const CustomerSelectionPage: React.FC = () => {
                             <label htmlFor="email" className="block text-sm font-medium text-text-secondary mb-1">{t('yourEmailOptional')}</label>
                             <input type="email" name="email" id="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent text-text-primary" required title={t('email_invalid_error')} />
                         </div>
-                        <div>
-                            <label htmlFor="address" className="block text-sm font-medium text-text-secondary mb-1">{t('addressOptional')}</label>
-                            <textarea name="address" id="address" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} rows={2} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent text-text-primary" required />
-                        </div>
+                        <AddressDropdown
+                          label={t('addressOptional')}
+                          id="address"
+                          name="address"
+                          value={customerAddress}
+                          onChange={handleAddressChange}
+                          required
+                        />
                     </div>
                     <div className="space-y-4 max-h-80 overflow-y-auto pr-2 rtl:pr-0 rtl:pl-2 border-t border-border pt-6">
                         <h3 className="text-lg font-semibold text-text-primary">{t('yourSelection')}</h3>

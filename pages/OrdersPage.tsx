@@ -185,8 +185,9 @@ const OrdersPage: React.FC = () => {
         if (type === 'whatsapp') {
             const whatsappNumber = customer.whatsapp || customer.phone;
             if (whatsappNumber) {
-                const cleanedNumber = String(whatsappNumber).replace(/\D/g, '');
-                window.open(`https://wa.me/${cleanedNumber}?text=${encodedText}`, '_blank');
+                let cleanedNumber = String(whatsappNumber).replace(/\D/g, '');
+                // Prepend international prefix to the full number, including the leading zero as requested.
+                window.open(`https://wa.me/972${cleanedNumber}?text=${encodedText}`, '_blank');
             }
         } else if (type === 'email') {
             const subject = encodeURIComponent(`${t('invoiceNo')}: ${order.id.slice(-6)} - ${customer.name}`);

@@ -100,8 +100,9 @@ const CustomerDetailsPage: React.FC = () => {
     }, [activeShareMenu]);
     
     const formatWhatsAppLink = (number: string) => {
-        const cleaned = String(number).replace(/\D/g, '');
-        return `https://wa.me/${cleaned}`;
+        let cleaned = String(number).replace(/\D/g, '');
+        // Prepend international prefix to the full number, including the leading zero as requested.
+        return `https://wa.me/972${cleaned}`;
     };
 
     const generateInvoiceText = (order: Order, customer: Customer) => {
@@ -128,8 +129,9 @@ const CustomerDetailsPage: React.FC = () => {
         if (type === 'whatsapp') {
             const whatsappNumber = customer.whatsapp || customer.phone;
             if (whatsappNumber) {
-                const cleanedNumber = String(whatsappNumber).replace(/\D/g, '');
-                window.open(`https://wa.me/${cleanedNumber}?text=${encodedText}`, '_blank');
+                let cleanedNumber = String(whatsappNumber).replace(/\D/g, '');
+                // Prepend international prefix to the full number, including the leading zero as requested.
+                window.open(`https://wa.me/972${cleanedNumber}?text=${encodedText}`, '_blank');
             }
         } else if (type === 'email') {
             const subject = encodeURIComponent(`${t('invoiceNo')}: ${order.id.slice(-6)} - ${customer.name}`);

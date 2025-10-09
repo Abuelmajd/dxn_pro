@@ -1,6 +1,5 @@
-
 import React, { createContext, useState, useContext, ReactNode, useEffect, useMemo, useCallback } from 'react';
-import { Product, Order, CartItem, Customer, AppSettings, Language, NumberFormat, Currency, Expense, CustomerSelection, Category, HealthCheckResult } from '../types';
+import { Product, Order, CartItem, Customer, AppSettings, Language, NumberFormat, Currency, Expense, CustomerSelection, Category, HealthCheckResult, Discount } from '../types';
 import { translations, TranslationKeys } from '../translations';
 
 // ================================================================================================
@@ -37,6 +36,7 @@ interface AppContextType {
   login: (username: string, password: string) => boolean;
   logout: () => void;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
+  removeDiscount: (productId: string) => void;
   t: (key: TranslationKeys) => string;
   formatCurrency: (amount: number) => string;
   formatNumber: (num: number) => string;
@@ -121,12 +121,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [customerSelections, setCustomerSelections] = useState<CustomerSelection[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   
+  // FIX: Added missing `discounts` property to the default settings object to match the AppSettings interface.
   const [settings, setSettings] = useState<AppSettings>(() => loadLocalState('appSettings', {
     language: 'ar',
     currency: ILS_CURRENCY,
     numberFormat: 'ar',
     theme: 'dark',
     profitMarginILS: 20,
+    discounts: [],
   }));
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => loadLocalState('isAuthenticated', false));
@@ -137,22 +139,52 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // Memoize products to dynamically apply the profit margin from settings
+  // Memoize products to dynamically apply profit margin and discounts from settings
   const products = useMemo(() => {
     const profitMargin = settings.profitMarginILS || 0;
-    return rawProducts.map(p => ({
-      ...p,
-      // The price from the sheet is the base price. Add margin for display.
-      price: p.price + profitMargin,
-      memberPrice: p.memberPrice + profitMargin,
-    }));
-  }, [rawProducts, settings.profitMarginILS]);
+    const discounts = settings.discounts || [];
+    const globalDiscount = discounts.find(d => d.productId === 'ALL');
 
-  const callGoogleScript = useCallback(async (action: string, payload?: any) => {
+    return rawProducts.map(p => {
+      const priceWithMargin = p.price + profitMargin;
+      const memberPriceWithMargin = p.memberPrice + profitMargin;
+
+      let finalPrice = priceWithMargin;
+      let finalMemberPrice = memberPriceWithMargin;
+      let originalPrice: number | undefined = undefined;
+      let originalMemberPrice: number | undefined = undefined;
+      let discountPercentage: number | undefined = undefined;
+
+      const productDiscount = discounts.find(d => d.productId === p.id);
+      const applicableDiscount = productDiscount || globalDiscount;
+
+      if (applicableDiscount && applicableDiscount.percentage > 0) {
+        discountPercentage = applicableDiscount.percentage;
+        originalPrice = priceWithMargin;
+        originalMemberPrice = memberPriceWithMargin;
+
+        const discountMultiplier = 1 - (discountPercentage / 100);
+        finalPrice = priceWithMargin * discountMultiplier;
+        finalMemberPrice = memberPriceWithMargin * discountMultiplier;
+      }
+
+      return {
+        ...p,
+        price: finalPrice,
+        memberPrice: finalMemberPrice,
+        originalPrice,
+        originalMemberPrice,
+        discountPercentage,
+      };
+    });
+  }, [rawProducts, settings.profitMarginILS, settings.discounts]);
+
+  const callGoogleScript = useCallback(async (action: string, payload?: any, returnFullResponse = false) => {
     setApiError(null);
     try {
       const response = await fetch(GOOGLE_SCRIPT_URL, {
         method: 'POST',
+        mode: 'cors',
         redirect: "follow",
         headers: {
           'Content-Type': 'text/plain;charset=utf-8',
@@ -163,17 +195,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
+      const text = await response.text();
+      if (!text) {
+          throw new Error('Received an empty response from the server.');
+      }
 
-      const result = await response.json();
+      const result = JSON.parse(text);
       
       if (result.status === 'error') {
         throw new Error(result.message || 'An unknown API error occurred');
       }
 
-      return result.data;
+      return returnFullResponse ? result : result.data;
     } catch (error: any) {
-      console.error('Google Script API call failed:', error);
-      setApiError(error.message || 'Failed to communicate with the server.');
+      console.error(`Google Script API call failed for action "${action}":`, error);
+      let errorMessage = 'Failed to communicate with the server.';
+       if (error.message.includes('Failed to fetch')) {
+        errorMessage = `Network error or CORS issue. Please check your internet connection and ensure the Google Apps Script is deployed correctly with "Anyone" access. Error: ${error.message}`;
+      } else if (error.message.includes('JSON.parse')) {
+        errorMessage = 'Failed to parse server response. The response may not be valid JSON.';
+      } else {
+        errorMessage = error.message;
+      }
+      setApiError(errorMessage);
       return null;
     }
   }, []);
@@ -253,6 +298,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateSettings = (newSettings: Partial<AppSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
+  };
+
+  const removeDiscount = (productIdToDelete: string) => {
+    const updatedDiscounts = (settings.discounts || []).filter(d => d.productId !== productIdToDelete);
+    updateSettings({ discounts: updatedDiscounts });
   };
 
   const t = (key: TranslationKeys): string => {
@@ -372,34 +422,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const deleteProduct = async (productId: string): Promise<{ success: boolean; error?: string }> => {
     setIsUpdating(true);
-    try {
-        const response = await fetch(GOOGLE_SCRIPT_URL, {
-            method: 'POST',
-            redirect: "follow",
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'deleteProduct', payload: { productId } }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-
-        if (result.status === 'success') {
-            setRawProducts(prev => prev.filter(p => p.id !== productId)); // Optimistic update
-            setIsUpdating(false);
-            return { success: true };
-        } else {
-            setIsUpdating(false);
-            return { success: false, error: result.message };
-        }
-
-    } catch (error: any) {
-        console.error('Google Script API call failed for deleteProduct:', error);
-        setApiError(error.message || 'Failed to communicate with the server.');
-        setIsUpdating(false);
-        return { success: false, error: error.message };
+    const result = await callGoogleScript('deleteProduct', { productId }, true);
+    setIsUpdating(false);
+    
+    if (result && result.status === 'success') {
+        setRawProducts(prev => prev.filter(p => p.id !== productId));
+        return { success: true };
+    } else {
+        return { success: false, error: apiError || 'Failed to delete product.' };
     }
   };
 
@@ -507,6 +537,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     login,
     logout,
     updateSettings,
+    removeDiscount,
     t,
     formatCurrency,
     formatNumber,

@@ -6,12 +6,18 @@ export interface Currency {
   symbol: string;
 }
 
+export interface Discount {
+  productId: string; // 'ALL' for a global discount
+  percentage: number;
+}
+
 export interface AppSettings {
   language: Language;
   currency: Currency;
   numberFormat: NumberFormat;
   theme: 'light' | 'dark';
   profitMarginILS: number;
+  discounts: Discount[];
 }
 
 export interface Customer {
@@ -34,23 +40,29 @@ export interface Product {
   name: string;
   categoryId: string;
   description: string;
-  price: number; // Base Normal Price in ILS (without profit margin)
-  memberPrice: number; // Base Member Price in ILS (without profit margin)
+  price: number; // Final price (after profit margin and discount)
+  memberPrice: number; // Final member price (after profit margin and discount)
   normalPriceUSD: number; // Base Normal Price in USD (without $0.50 margin)
   memberPriceUSD: number; // Base Member Price in USD (without $0.50 margin)
   imageUrl: string;
   isAvailable: boolean;
   points: number;
+  originalPrice?: number; // Original price before discount
+  originalMemberPrice?: number; // Original member price before discount
+  discountPercentage?: number;
 }
 
 export interface CartItem {
   productId: string;
   name: string;
-  price: number;
+  price: number; // The final price for this item in the cart
   quantity: number;
   points: number;
+  originalPrice?: number; // The price before any discount was applied for this transaction
+  appliedDiscountPercentage?: number; // The discount % that was available
 }
 
+// FIX: Completed the Order interface and added createdAt property
 export interface Order {
   id: string;
   customerId: string;
@@ -61,17 +73,18 @@ export interface Order {
   createdAt: Date;
 }
 
+// FIX: Added missing Expense type definition
 export interface Expense {
-    id: string;
-    description: string;
-    amount: number;
-    date: Date;
-    // Fix: Add optional properties for product purchase expenses to resolve type errors in ExpensesPage.
-    isProductPurchase?: boolean;
-    quantityPurchased?: number;
-    purchasePricePerItem?: number;
+  id: string;
+  description: string;
+  amount: number;
+  date: Date;
+  isProductPurchase?: boolean;
+  quantityPurchased?: number;
+  purchasePricePerItem?: number;
 }
 
+// FIX: Added missing CustomerSelection type definition
 export interface CustomerSelection {
   id: string;
   customerName: string;
@@ -83,6 +96,7 @@ export interface CustomerSelection {
   status: 'pending' | 'processed';
 }
 
+// FIX: Added missing HealthCheckResult type definition
 export interface HealthCheckResult {
   check: string;
   status: 'success' | 'error';

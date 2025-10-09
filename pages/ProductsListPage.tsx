@@ -29,17 +29,16 @@ const EyeOffIcon = () => (
     </svg>
 );
 
-interface DeleteConfirmationModalProps {
+const ConfirmationModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  title: string;
+  message: string;
+  confirmText: string;
   errorMessage?: string;
   warningMessage?: string;
-}
-
-const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({ isOpen, onClose, onConfirm, errorMessage, warningMessage }) => {
-  const { t } = useAppContext();
-
+}> = ({ isOpen, onClose, onConfirm, title, message, confirmText, errorMessage, warningMessage }) => {
   React.useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -60,7 +59,7 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({ isOpe
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-60 z-[100] flex justify-center items-center p-4"
-      aria-labelledby="delete-modal-title"
+      aria-labelledby="confirmation-modal-title"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
@@ -69,11 +68,9 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({ isOpe
         className="bg-card rounded-xl shadow-2xl p-6 w-full max-w-md transform transition-all"
         onClick={e => e.stopPropagation()}
       >
-        <h3 id="delete-modal-title" className="text-xl font-bold text-text-primary">{t('confirmDeletionTitle')}</h3>
-        <p className="text-text-secondary mt-4">
-          {t('confirmDeleteProduct')}
-        </p>
-
+        <h3 id="confirmation-modal-title" className="text-xl font-bold text-text-primary">{title}</h3>
+        <p className="text-text-secondary mt-4 whitespace-pre-wrap">{message}</p>
+        
         {warningMessage && (
           <div className="mt-4 p-3 bg-yellow-900/30 text-yellow-300 rounded-md text-sm border border-yellow-500/30">
             {warningMessage}
@@ -91,13 +88,13 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({ isOpe
             onClick={onClose}
             className="px-4 py-2 rounded-md font-semibold bg-card-secondary text-text-primary hover:bg-border transition-colors"
           >
-            {t('cancel')}
+            {confirmText === 'Delete' ? 'Cancel' : 'إلغاء'}
           </button>
           <button
             onClick={onConfirm}
             className="px-4 py-2 rounded-md font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors"
           >
-            {t('delete')}
+            {confirmText}
           </button>
         </div>
       </div>
@@ -107,50 +104,51 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({ isOpe
 
 
 const ProductsListPage: React.FC = () => {
-    const { products, categories, orders, t, formatCurrency, formatNumber, getCategoryNameById, deleteProduct, toggleProductAvailability, isUpdating } = useAppContext();
+    const { products, categories, orders, t, formatCurrency, formatInteger, getCategoryNameById, deleteProduct, toggleProductAvailability, isUpdating, removeDiscount, settings } = useAppContext();
     
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategoryId, setSelectedCategoryId] = useState('');
     const [selectedStatus, setSelectedStatus] = useState(''); // '', 'available', 'unavailable'
-    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-    const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+    
+    const [modalState, setModalState] = useState<{ type: 'deleteProduct' | 'removeDiscount' | null, product: Product | null }>({ type: null, product: null });
     const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
     const [deleteWarning, setDeleteWarning] = useState<string | undefined>(undefined);
 
-    const handleDeleteRequest = (product: Product) => {
-        setProductToDelete(product);
-        setDeleteError(undefined);
-
-        const isInOrder = orders.some(order => order.items.some(item => item.productId === product.id));
-        if (isInOrder) {
-            setDeleteWarning(t('confirmDeleteProductWarning'));
-        } else {
-            setDeleteWarning(undefined);
-        }
-        
-        setIsDeleteModalOpen(true);
-    };
-
-    const handleConfirmDelete = async () => {
-        if (!productToDelete) return;
-        
-        const result = await deleteProduct(productToDelete.id);
-        if (!result.success) {
-            setDeleteError(result.error || "An unknown error occurred.");
-            setDeleteWarning(undefined);
-        } else {
-            setIsDeleteModalOpen(false);
-            setProductToDelete(null);
-            setDeleteError(undefined);
-            setDeleteWarning(undefined);
-        }
-    };
-
-    const handleCancelDelete = () => {
-        setIsDeleteModalOpen(false);
-        setProductToDelete(null);
+    const openModal = (type: 'deleteProduct' | 'removeDiscount', product: Product) => {
         setDeleteError(undefined);
         setDeleteWarning(undefined);
+
+        if (type === 'deleteProduct') {
+            const isInOrder = orders.some(order => order.items.some(item => item.productId === product.id));
+            if (isInOrder) {
+                setDeleteWarning(t('confirmDeleteProductWarning'));
+            }
+        }
+        setModalState({ type, product });
+    };
+
+    const closeModal = () => {
+        setModalState({ type: null, product: null });
+    };
+
+    const handleConfirm = async () => {
+        if (!modalState.product || !modalState.type) return;
+
+        if (modalState.type === 'deleteProduct') {
+            const result = await deleteProduct(modalState.product.id);
+            if (!result.success) {
+                setDeleteError(result.error || "An unknown error occurred.");
+                setDeleteWarning(undefined);
+            } else {
+                closeModal();
+            }
+        } else if (modalState.type === 'removeDiscount') {
+            const discount = settings.discounts.find(d => d.productId === modalState.product!.id || d.productId === 'ALL');
+            if (discount) {
+                removeDiscount(discount.productId);
+            }
+            closeModal();
+        }
     };
 
     const filteredProducts = useMemo(() => {
@@ -159,7 +157,8 @@ const ProductsListPage: React.FC = () => {
             const categoryMatch = !selectedCategoryId || product.categoryId === selectedCategoryId;
             const statusMatch = selectedStatus === '' ||
                                 (selectedStatus === 'available' && (product.isAvailable ?? true)) ||
-                                (selectedStatus === 'unavailable' && !(product.isAvailable ?? true));
+                                (selectedStatus === 'unavailable' && !(product.isAvailable ?? true)) ||
+                                (selectedStatus === 'on_sale' && (product.discountPercentage && product.discountPercentage > 0));
             return nameMatch && categoryMatch && statusMatch;
         });
     }, [products, searchTerm, selectedCategoryId, selectedStatus]);
@@ -203,6 +202,7 @@ const ProductsListPage: React.FC = () => {
                     <option value="">{t('allStatuses')}</option>
                     <option value="available">{t('available')}</option>
                     <option value="unavailable">{t('unavailable')}</option>
+                    <option value="on_sale">{t('onSaleFilter')}</option>
                 </select>
             </div>
 
@@ -211,10 +211,9 @@ const ProductsListPage: React.FC = () => {
                     <table className="w-full text-sm text-text-secondary">
                         <thead className="text-xs text-text-primary uppercase bg-card-secondary">
                             <tr>
-                                <th scope="col" className="px-6 py-3 min-w-[80px]">{t('productImage')}</th>
+                                <th scope="col" className="px-6 py-3 min-w-[80px]"></th>
                                 <th scope="col" className="px-6 py-3 min-w-[200px] text-right">{t('productName')}</th>
-                                <th scope="col" className="px-6 py-3 text-center">{t('normalPrice')}</th>
-                                <th scope="col" className="px-6 py-3 text-center">{t('memberPrice')}</th>
+                                <th scope="col" className="px-6 py-3 text-center">{t('sellingPrice')}</th>
                                 <th scope="col" className="px-6 py-3 text-center">{t('points')}</th>
                                 <th scope="col" className="px-6 py-3 text-right">{t('actions')}</th>
                             </tr>
@@ -223,6 +222,7 @@ const ProductsListPage: React.FC = () => {
                             {filteredProducts.length > 0 ? (
                                 filteredProducts.map(product => {
                                     const isAvailable = product.isAvailable ?? true;
+                                    const hasDiscount = !!product.discountPercentage;
                                     return (
                                         <tr 
                                             key={product.id} 
@@ -233,20 +233,37 @@ const ProductsListPage: React.FC = () => {
                                             </td>
                                             <th scope="row" className="px-6 py-4 font-bold text-text-primary whitespace-nowrap text-right">
                                                 {product.name}
-                                                {!isAvailable && <span className="ms-2 text-xs font-semibold text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t('unavailable')}</span>}
+                                                <div>
+                                                    {!isAvailable && <span className="me-2 text-xs font-semibold text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t('unavailable')}</span>}
+                                                    {hasDiscount && 
+                                                        <span className="text-xs font-semibold text-green-400 bg-green-900/50 px-2 py-0.5 rounded-full">
+                                                          -{formatInteger(product.discountPercentage!)}%
+                                                        </span>
+                                                    }
+                                                </div>
                                                 <p className="font-normal text-text-secondary">{getCategoryNameById(product.categoryId)}</p>
                                             </th>
-                                            <td className="px-6 py-4 text-center font-semibold text-text-secondary">
-                                                {formatCurrency(product.price)}
+                                            <td className="px-6 py-4 text-center font-semibold">
+                                                <div className="flex flex-col items-center">
+                                                    <span className="font-bold text-lg text-accent">{formatCurrency(product.price)}</span>
+                                                    {hasDiscount && <span className="text-xs text-text-secondary line-through">{formatCurrency(product.originalPrice!)}</span>}
+                                                </div>
                                             </td>
                                             <td className="px-6 py-4 text-center font-bold text-accent">
-                                                {formatCurrency(product.memberPrice)}
-                                            </td>
-                                            <td className="px-6 py-4 text-center font-bold text-accent">
-                                                {formatNumber(product.points)}
+                                                {formatInteger(product.points)}
                                             </td>
                                             <td className="px-6 py-4 text-right">
-                                                <div className="flex justify-end items-center gap-2">
+                                                <div className="flex justify-end items-center gap-1">
+                                                    {hasDiscount && (
+                                                        <button 
+                                                            onClick={() => openModal('removeDiscount', product)}
+                                                            disabled={isUpdating}
+                                                            title={t('removeDiscount')}
+                                                            className="p-2 rounded-full text-text-secondary hover:bg-card-secondary hover:text-red-400 transition-colors disabled:opacity-50"
+                                                        >
+                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                                                        </button>
+                                                    )}
                                                     <button 
                                                         onClick={() => toggleProductAvailability(product.id)}
                                                         disabled={isUpdating}
@@ -263,7 +280,7 @@ const ProductsListPage: React.FC = () => {
                                                         <PencilIcon />
                                                     </Link>
                                                     <button 
-                                                        onClick={() => handleDeleteRequest(product)} 
+                                                        onClick={() => openModal('deleteProduct', product)} 
                                                         disabled={isUpdating}
                                                         title={t('delete')}
                                                         className="p-2 rounded-full text-text-secondary hover:bg-card-secondary hover:text-red-400 transition-colors disabled:opacity-50"
@@ -286,13 +303,18 @@ const ProductsListPage: React.FC = () => {
                     </table>
                 </div>
             </div>
-            <DeleteConfirmationModal 
-                isOpen={isDeleteModalOpen}
-                onClose={handleCancelDelete}
-                onConfirm={handleConfirmDelete}
-                errorMessage={deleteError}
-                warningMessage={deleteWarning}
-            />
+            {modalState.type && modalState.product && (
+              <ConfirmationModal 
+                  isOpen={!!modalState.type}
+                  onClose={closeModal}
+                  onConfirm={handleConfirm}
+                  title={modalState.type === 'deleteProduct' ? t('confirmDeletionTitle') : t('removeDiscount')}
+                  message={modalState.type === 'deleteProduct' ? t('confirmDeleteProduct') : t('confirmRemoveDiscount')}
+                  confirmText={modalState.type === 'deleteProduct' ? t('delete') : t('removeDiscount')}
+                  errorMessage={deleteError}
+                  warningMessage={deleteWarning}
+              />
+            )}
         </div>
     );
 };

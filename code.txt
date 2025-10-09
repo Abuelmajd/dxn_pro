@@ -679,7 +679,12 @@ function appendRowFromObject(sheet, obj) {
     }
 
     const newRow = headers.map(header => {
-        const value = lowerCaseValueMap[header.toLowerCase()];
+        let value = lowerCaseValueMap[header.toLowerCase()];
+        const lowerHeader = header.toLowerCase();
+        // Force phone/whatsapp numbers to be treated as strings by Google Sheets
+        if ((lowerHeader === 'phone' || lowerHeader === 'whatsapp' || lowerHeader === 'customerphone') && value && String(value).startsWith('0')) {
+            value = "'" + value;
+        }
         return (value !== undefined && value !== null) ? value : '';
     });
     sheet.appendRow(newRow);
@@ -706,7 +711,12 @@ function updateRowById(sheetName, recordId, payload) {
         }
 
         const updatedRow = headers.map(header => {
-            const value = lowerCaseValueMap[header.toLowerCase()];
+            let value = lowerCaseValueMap[header.toLowerCase()];
+            const lowerHeader = header.toLowerCase();
+            // Force phone/whatsapp numbers to be treated as strings by Google Sheets
+            if ((lowerHeader === 'phone' || lowerHeader === 'whatsapp' || lowerHeader === 'customerphone') && value && String(value).startsWith('0')) {
+                value = "'" + value;
+            }
             return (value !== undefined && value !== null) ? value : '';
         });
 

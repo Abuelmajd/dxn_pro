@@ -9,7 +9,7 @@ interface ProductDetailModalProps {
 }
 
 const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClose, onAddToCart }) => {
-  const { t, formatCurrency, getCategoryNameById } = useAppContext();
+  const { t, formatCurrency, getCategoryNameById, formatInteger } = useAppContext();
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -25,6 +25,8 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
     };
   }, [onClose]);
 
+  const hasDiscount = !!product.discountPercentage && typeof product.originalPrice === 'number';
+
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-[100] transition-opacity duration-300"
@@ -39,7 +41,12 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
         style={{ animationFillMode: 'forwards' }}
       >
         <div className="grid md:grid-cols-2">
-          <div className="h-64 md:h-full bg-background/50">
+          <div className="relative h-64 md:h-full bg-background/50">
+            {hasDiscount && (
+                <div className="absolute top-4 right-4 rtl:right-auto rtl:left-4 bg-red-600 text-white text-base font-bold px-4 py-2 rounded-lg z-10 shadow-lg animate-pulse">
+                    -{formatInteger(product.discountPercentage!)}%
+                </div>
+            )}
             <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain" />
           </div>
           <div className="p-6 flex flex-col">
@@ -53,7 +60,12 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
             <div className="mt-6 pt-6 border-t border-border flex-grow flex flex-col justify-end">
                 <div className="flex justify-between items-center">
                     <span className="text-xl font-bold text-text-primary">{t('sellingPrice')}</span>
-                    <span className="text-2xl font-bold text-accent">{formatCurrency(product.price)}</span>
+                     <div className="flex items-baseline gap-3 rtl:flex-row-reverse">
+                        <span className="text-2xl font-bold text-accent">{formatCurrency(product.price)}</span>
+                        {hasDiscount && (
+                            <span className="text-xl text-text-secondary line-through">{formatCurrency(product.originalPrice!)}</span>
+                        )}
+                    </div>
                 </div>
             </div>
              <div className="mt-8 flex gap-4">

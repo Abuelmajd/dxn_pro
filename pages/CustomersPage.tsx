@@ -109,8 +109,9 @@ const CustomersPage: React.FC = () => {
     }, [orders]);
 
     const formatWhatsAppLink = (number: string) => {
-        const cleaned = String(number).replace(/\D/g, '');
-        return `https://wa.me/${cleaned}`;
+        let cleaned = String(number).replace(/\D/g, '');
+        // Prepend international prefix to the full number, including the leading zero as requested.
+        return `https://wa.me/972${cleaned}`;
     };
 
     const handleDeleteRequest = (customer: Customer) => {

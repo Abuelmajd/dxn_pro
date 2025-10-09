@@ -100,11 +100,10 @@ const VerticalBarChart: React.FC<VerticalBarChartProps> = ({ data, valueFormatte
     );
 };
 
-
 // Dashboard Page Component
 const DashboardPage: React.FC = () => {
-  const { orders, expenses, customers, t, formatCurrency, formatNumber, settings, getCustomerById, formatInteger } = useAppContext();
-
+  const { orders, expenses, t, formatCurrency, formatNumber, settings, getCustomerById, formatInteger } = useAppContext();
+  
   // --- Data Aggregation ---
   const totalSales = orders.reduce((sum, order) => sum + order.totalPrice, 0);
   const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
@@ -182,7 +181,7 @@ const DashboardPage: React.FC = () => {
         <StatCard title={t('ordersCount')} value={formatInteger(orders.length)} icon={<ClipboardListIcon />} color="bg-gradient-to-br from-primary to-primary-hover" />
         <StatCard title={t('totalPointsThisMonth')} value={formatNumber(totalPointsThisMonth)} icon={<StarIcon />} color="bg-gradient-to-br from-teal-500 to-teal-600" />
       </div>
-      
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         <ChartContainer title={t('bestSellingProducts')}>
             <VerticalBarChart
@@ -206,7 +205,6 @@ const DashboardPage: React.FC = () => {
             />
         </ChartContainer>
       </div>
-
     </div>
   );
 };
