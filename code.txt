@@ -3,7 +3,7 @@
 //
 // INSTRUCTIONS:
 //
-// 1. Ensure your Google Sheet has 8 tabs with these exact English names:
+// 1. Ensure your Google Sheet has 9 tabs with these exact English names:
 //    - Products
 //    - Categories
 //    - Customers
@@ -12,6 +12,7 @@
 //    - Expenses
 //    - CustomerSelections
 //    - CustomerSelectionItems
+//    - Settings
 //
 // 2. VERY IMPORTANT: The first row of each sheet MUST have the following English headers exactly.
 //    Please copy and paste these headers precisely to ensure the code works correctly.
@@ -39,6 +40,9 @@
 //
 //    - CustomerSelectionItems sheet headers:
 //      selectionId, productId, name, price, quantity, points
+//
+//    - Settings sheet headers:
+//      key, value
 //
 // 3. In Google Sheets, go to Extensions > Apps Script.
 // 4. Delete any existing code in `Code.gs` and paste this entire script.
@@ -81,7 +85,8 @@ const SHEET_MAPPING = {
   ORDER_ITEMS: 'OrderItems',
   EXPENSES: 'Expenses',
   CUSTOMER_SELECTIONS: 'CustomerSelections',
-  CUSTOMER_SELECTION_ITEMS: 'CustomerSelectionItems'
+  CUSTOMER_SELECTION_ITEMS: 'CustomerSelectionItems',
+  SETTINGS: 'Settings'
 };
 
 const REQUIRED_SCHEMA = {
@@ -92,11 +97,83 @@ const REQUIRED_SCHEMA = {
   'OrderItems': ['orderId', 'productId', 'name', 'price', 'quantity', 'points'],
   'Expenses': ['id', 'description', 'amount', 'date'],
   'CustomerSelections': ['id', 'customerName', 'customerPhone', 'customerEmail', 'customerAddress', 'createdAt', 'status'],
-  'CustomerSelectionItems': ['selectionId', 'productId', 'name', 'price', 'quantity', 'points']
+  'CustomerSelectionItems': ['selectionId', 'productId', 'name', 'price', 'quantity', 'points'],
+  'Settings': ['key', 'value']
 };
 
 
 // --- CORE FUNCTIONS ---
+
+const DEFAULT_SETTINGS = {
+  language: 'ar',
+  currency: { code: 'ILS', symbol: '₪' },
+  numberFormat: 'en',
+  theme: 'light',
+  profitMarginILS: 20,
+  discounts: [],
+};
+
+function _getSettings() {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.SETTINGS);
+  if (!sheet) return DEFAULT_SETTINGS;
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return DEFAULT_SETTINGS;
+  
+  const settings = {};
+  data.slice(1).forEach(row => {
+    const key = row[0];
+    let value = row[1];
+    if (key) {
+      try {
+        // Try to parse if it's JSON (like for discounts)
+        value = JSON.parse(value);
+      } catch (e) {
+        // Not JSON, check for boolean or number
+        if (value === 'true') value = true;
+        else if (value === 'false') value = false;
+        else if (!isNaN(parseFloat(value)) && isFinite(value)) value = parseFloat(value);
+      }
+      settings[key] = value;
+    }
+  });
+  
+  return { ...DEFAULT_SETTINGS, ...settings };
+}
+
+function _updateSettings(payload) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.SETTINGS);
+  if (!sheet) throw new Error("Settings sheet not found.");
+  
+  const headers = getHeaders(sheet);
+  const keyColumnIndex = headers.findIndex(h => h.toLowerCase() === 'key');
+  const valueColumnIndex = headers.findIndex(h => h.toLowerCase() === 'value');
+  
+  if (keyColumnIndex === -1 || valueColumnIndex === -1) {
+    throw new Error("Settings sheet must have 'key' and 'value' columns.");
+  }
+  
+  let data = sheet.getDataRange().getValues();
+
+  for (const key in payload) {
+    if (payload.hasOwnProperty(key)) {
+      let value = payload[key];
+      
+      if (typeof value === 'object' && value !== null) {
+        value = JSON.stringify(value);
+      }
+      
+      const rowIndex = data.findIndex(row => String(row[keyColumnIndex]).trim() === String(key).trim());
+      
+      if (rowIndex > 0) {
+        sheet.getRange(rowIndex + 1, valueColumnIndex + 1).setValue(value);
+      } else {
+        sheet.appendRow([key, value]);
+      }
+      // We must refetch data if we append a row to get correct rowIndex for subsequent keys
+      data = sheet.getDataRange().getValues();
+    }
+  }
+}
 
 /**
  * Reusable function to fetch and structure all data.
@@ -109,6 +186,7 @@ function _getAllData() {
     orders: getSheetData(SHEET_MAPPING.ORDERS),
     expenses: getSheetData(SHEET_MAPPING.EXPENSES),
     customerSelections: getSheetData(SHEET_MAPPING.CUSTOMER_SELECTIONS),
+    settings: _getSettings(),
   };
   
   const orderItems = getSheetData(SHEET_MAPPING.ORDER_ITEMS);
@@ -164,6 +242,7 @@ function doPost(e) {
       case 'addCustomerSelection': return handleAddCustomerSelection(payload);
       case 'processSelection': return handleProcessSelection(payload);
       case 'runHealthCheck': return handleHealthCheck();
+      case 'updateSettings': return handleUpdateSettings(payload);
       default: throw new Error(`Unknown action: ${action}`);
     }
   } catch (error) {
@@ -175,6 +254,11 @@ function doPost(e) {
 }
 
 // --- ACTION HANDLERS ---
+function handleUpdateSettings(payload) {
+    _updateSettings(payload);
+    // Return the newly saved settings object
+    return createJsonResponse({ status: 'success', data: _getSettings() });
+}
 
 function handleGetExchangeRate() {
   try {

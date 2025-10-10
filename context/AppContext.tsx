@@ -15,6 +15,14 @@ const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxJWD
 
 const FALLBACK_USD_TO_ILS_RATE = 3.7;
 const ILS_CURRENCY: Currency = { code: 'ILS', symbol: '₪' };
+const DEFAULT_SETTINGS: AppSettings = {
+  language: 'ar',
+  currency: ILS_CURRENCY,
+  numberFormat: 'en',
+  theme: 'light',
+  profitMarginILS: 20,
+  discounts: [],
+};
 
 type AddProductData = Omit<Product, 'id' | 'isAvailable'>;
 
@@ -35,7 +43,7 @@ interface AppContextType {
   apiError: string | null;
   login: (username: string, password: string) => boolean;
   logout: () => void;
-  updateSettings: (newSettings: Partial<AppSettings>) => void;
+  updateSettings: (newSettings: Partial<AppSettings>) => Promise<boolean>;
   removeDiscount: (productId: string) => void;
   t: (key: TranslationKeys) => string;
   formatCurrency: (amount: number) => string;
@@ -84,7 +92,7 @@ function loadLocalState<T>(key: string, defaultValue: T): T {
 };
 
 const parseData = (data: any) => {
-  if (!data) return { products: [], orders: [], customers: [], expenses: [], customerSelections: [], categories: [] };
+  if (!data) return { products: [], orders: [], customers: [], expenses: [], customerSelections: [], categories: [], settings: DEFAULT_SETTINGS };
 
   function parseWithDates<T>(items: any[]): T[] {
     return items.map(item => ({
@@ -102,6 +110,7 @@ const parseData = (data: any) => {
     expenses: (parseWithDates<Expense>(data.expenses || [])).sort((a,b) => b.date.getTime() - a.date.getTime()),
     customerSelections: parseWithDates<CustomerSelection>(data.customerSelections || []),
     categories: data.categories || [],
+    settings: data.settings ? { ...DEFAULT_SETTINGS, ...data.settings } : DEFAULT_SETTINGS,
   };
 };
 
@@ -121,15 +130,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [customerSelections, setCustomerSelections] = useState<CustomerSelection[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   
-  // FIX: Added missing `discounts` property to the default settings object to match the AppSettings interface.
-  const [settings, setSettings] = useState<AppSettings>(() => loadLocalState('appSettings', {
-    language: 'ar',
-    currency: ILS_CURRENCY,
-    numberFormat: 'ar',
-    theme: 'dark',
-    profitMarginILS: 20,
-    discounts: [],
-  }));
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    // Load only theme and language from local storage for faster initial UI paint
+    const savedTheme = loadLocalState('appTheme', 'dark');
+    const savedLang = loadLocalState('appLang', 'ar');
+    return { ...DEFAULT_SETTINGS, theme: savedTheme, language: savedLang };
+  });
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => loadLocalState('isAuthenticated', false));
   const [exchangeRate, setExchangeRate] = useState<number>(FALLBACK_USD_TO_ILS_RATE);
@@ -236,6 +242,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setExpenses(parsed.expenses);
       setCustomerSelections(parsed.customerSelections);
       setCategories(parsed.categories);
+      setSettings(parsed.settings);
     }
     if (isInitialLoad) setIsLoading(false);
     else setIsRefreshing(false);
@@ -260,16 +267,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [callGoogleScript]);
 
   useEffect(() => {
-    saveLocalState('appSettings', settings);
-  }, [settings]);
-
-  useEffect(() => {
     const root = document.documentElement;
     
     // Language and Direction
     root.lang = settings.language;
     root.dir = settings.language === 'ar' ? 'rtl' : 'ltr';
     document.title = 'DXN App';
+    saveLocalState('appLang', settings.language);
     
     // Theme
     if (settings.theme === 'dark') {
@@ -277,6 +281,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } else {
       root.classList.remove('dark');
     }
+    saveLocalState('appTheme', settings.theme);
+
   }, [settings.language, settings.theme]);
 
   useEffect(() => {
@@ -296,8 +302,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsAuthenticated(false);
   };
 
-  const updateSettings = (newSettings: Partial<AppSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
+  const updateSettings = async (newSettings: Partial<AppSettings>): Promise<boolean> => {
+    const originalSettings = settings;
+    const updatedSettingsData = { ...settings, ...newSettings };
+
+    // Optimistically update the UI
+    setSettings(updatedSettingsData);
+    setIsUpdating(true); // Still indicate background activity
+
+    const result = await callGoogleScript('updateSettings', updatedSettingsData);
+    
+    setIsUpdating(false);
+    if (result) {
+        // API call succeeded, update with the confirmed data from the server
+        setSettings(result);
+        return true;
+    } else {
+        // API call failed, roll back to the original state
+        setSettings(originalSettings);
+        // The error will be shown via apiError state
+        return false;
+    }
   };
 
   const removeDiscount = (productIdToDelete: string) => {
@@ -421,14 +446,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteProduct = async (productId: string): Promise<{ success: boolean; error?: string }> => {
-    setIsUpdating(true);
-    const result = await callGoogleScript('deleteProduct', { productId }, true);
-    setIsUpdating(false);
+    const originalProducts = rawProducts;
     
+    // Optimistically update the UI by removing the product
+    setRawProducts(prev => prev.filter(p => p.id !== productId));
+    setIsUpdating(true); // Indicate background activity
+
+    const result = await callGoogleScript('deleteProduct', { productId }, true);
+    
+    setIsUpdating(false);
     if (result && result.status === 'success') {
-        setRawProducts(prev => prev.filter(p => p.id !== productId));
+        // API call succeeded, UI is already correct
         return { success: true };
     } else {
+        // API call failed, roll back
+        setRawProducts(originalProducts);
         return { success: false, error: apiError || 'Failed to delete product.' };
     }
   };
