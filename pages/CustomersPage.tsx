@@ -96,6 +96,7 @@ const ConfirmationModal: React.FC<{
 const CustomersPage: React.FC = () => {
     const { customers, orders, t, formatCurrency, formatInteger, deleteCustomer, isUpdating } = useAppContext();
     const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
     const customerStats = useMemo(() => {
         const stats = new Map<string, { totalSpent: number; invoiceCount: number }>();
@@ -107,6 +108,18 @@ const CustomersPage: React.FC = () => {
         });
         return stats;
     }, [orders]);
+
+    const filteredCustomers = useMemo(() => {
+        if (!searchTerm.trim()) {
+            return customers;
+        }
+        const lowercasedFilter = searchTerm.toLowerCase().trim();
+        return customers.filter(customer => {
+            const nameMatch = customer.name.toLowerCase().includes(lowercasedFilter);
+            const phoneMatch = String(customer.phone).includes(lowercasedFilter);
+            return nameMatch || phoneMatch;
+        });
+    }, [customers, searchTerm]);
 
     const formatWhatsAppLink = (number: string) => {
         let cleaned = String(number).replace(/\D/g, '');
@@ -135,6 +148,16 @@ const CustomersPage: React.FC = () => {
                 <p className="mt-1 text-text-secondary">{t('allCustomers')}</p>
             </div>
 
+            <div className="mb-6">
+                <input
+                    type="search"
+                    placeholder={t('searchForCustomerByNameOrPhone')}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full p-3 bg-card rounded-lg shadow-sm border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
+                />
+            </div>
+
             {customers.length === 0 ? (
                 <div className="text-center py-20 bg-card rounded-xl shadow-lg">
                     <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-16 w-16 text-text-secondary/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -143,9 +166,16 @@ const CustomersPage: React.FC = () => {
                     <h3 className="mt-4 text-lg font-medium text-text-primary">{t('noCustomersYet')}</h3>
                     <p className="mt-1 text-sm text-text-secondary">{t('customersAppearHere')}</p>
                 </div>
+            ) : filteredCustomers.length === 0 ? (
+                 <div className="text-center py-20 bg-card rounded-xl shadow-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-16 w-16 text-text-secondary/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <h3 className="mt-4 text-lg font-medium text-text-primary">{t('noSearchResults')}</h3>
+                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {customers.map(customer => {
+                    {filteredCustomers.map(customer => {
                         const stats = customerStats.get(customer.id) || { totalSpent: 0, invoiceCount: 0 };
                         return (
                             <div key={customer.id} className="relative group">

@@ -235,6 +235,8 @@ export const translations = {
     applyDiscount: 'Apply Discount',
     discountRemovedForInvoice: 'Discount removed for this invoice',
     reapplyDiscount: 'Re-apply Discount',
+    searchForCustomerByNameOrPhone: 'Search by name or phone number...',
+    noSearchResults: 'No customers found matching your search.',
   },
   ar: {
     salesManager: 'تطبيق DXN',
@@ -470,6 +472,8 @@ export const translations = {
     applyDiscount: 'تطبيق الخصم',
     discountRemovedForInvoice: 'أُزيل الخصم لهذه الفاتورة',
     reapplyDiscount: 'إعادة تطبيق الخصم',
+    searchForCustomerByNameOrPhone: 'البحث بالاسم أو رقم الهاتف...',
+    noSearchResults: 'لم يتم العثور على عملاء يطابقون بحثك.',
   },
 };
 

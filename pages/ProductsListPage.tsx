@@ -39,6 +39,8 @@ const ConfirmationModal: React.FC<{
   errorMessage?: string;
   warningMessage?: string;
 }> = ({ isOpen, onClose, onConfirm, title, message, confirmText, errorMessage, warningMessage }) => {
+  const { t } = useAppContext();
+  
   React.useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -88,7 +90,7 @@ const ConfirmationModal: React.FC<{
             onClick={onClose}
             className="px-4 py-2 rounded-md font-semibold bg-card-secondary text-text-primary hover:bg-border transition-colors"
           >
-            {confirmText === 'Delete' ? 'Cancel' : 'إلغاء'}
+            {t('cancel')}
           </button>
           <button
             onClick={onConfirm}
@@ -104,7 +106,7 @@ const ConfirmationModal: React.FC<{
 
 
 const ProductsListPage: React.FC = () => {
-    const { products, categories, orders, t, formatCurrency, formatInteger, getCategoryNameById, deleteProduct, toggleProductAvailability, isUpdating, removeDiscount, settings } = useAppContext();
+    const { products, categories, orders, t, formatCurrency, formatInteger, getCategoryNameById, deleteProduct, toggleProductAvailability, isUpdating, removeDiscount, settings, formatNumber } = useAppContext();
     
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategoryId, setSelectedCategoryId] = useState('');
@@ -165,7 +167,7 @@ const ProductsListPage: React.FC = () => {
 
 
     return (
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-7xl mx-auto">
             <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-text-primary">{t('productList')}</h1>
@@ -209,13 +211,15 @@ const ProductsListPage: React.FC = () => {
             <div className="bg-card rounded-xl shadow-lg overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-text-secondary">
-                        <thead className="text-xs text-text-primary uppercase bg-card-secondary">
+                        <thead className="text-sm text-text-secondary bg-card-secondary">
                             <tr>
-                                <th scope="col" className="px-6 py-3 min-w-[80px]"></th>
-                                <th scope="col" className="px-6 py-3 min-w-[200px] text-right">{t('productName')}</th>
-                                <th scope="col" className="px-6 py-3 text-center">{t('sellingPrice')}</th>
-                                <th scope="col" className="px-6 py-3 text-center">{t('points')}</th>
-                                <th scope="col" className="px-6 py-3 text-right">{t('actions')}</th>
+                                <th scope="col" className="px-6 py-4 text-right font-medium min-w-[300px]">{t('product')}</th>
+                                <th scope="col" className="px-6 py-4 text-center font-medium">{t('normalPriceUSD')}</th>
+                                <th scope="col" className="px-6 py-4 text-center font-medium">{t('memberPriceUSD')}</th>
+                                <th scope="col" className="px-6 py-4 text-center font-medium">{t('sellingPrice')}</th>
+                                <th scope="col" className="px-6 py-4 text-center font-medium">{t('memberPrice')}</th>
+                                <th scope="col" className="px-6 py-4 text-center font-medium">{t('points')}</th>
+                                <th scope="col" className="px-6 py-4 text-left font-medium">{t('actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -226,33 +230,47 @@ const ProductsListPage: React.FC = () => {
                                     return (
                                         <tr 
                                             key={product.id} 
-                                            className={`border-b border-border hover:bg-card-secondary transition-opacity ${!isAvailable ? 'opacity-50' : ''}`}
+                                            className={`border-b border-border hover:bg-card-secondary align-middle transition-opacity ${!isAvailable ? 'opacity-60' : ''}`}
                                         >
                                             <td className="px-6 py-4">
-                                                <img src={product.imageUrl} alt={product.name} className="h-12 w-12 rounded-md object-contain bg-background/50"/>
-                                            </td>
-                                            <th scope="row" className="px-6 py-4 font-bold text-text-primary whitespace-nowrap text-right">
-                                                {product.name}
-                                                <div>
-                                                    {!isAvailable && <span className="me-2 text-xs font-semibold text-red-500 bg-red-900/50 px-2 py-0.5 rounded-full">{t('unavailable')}</span>}
-                                                    {hasDiscount && 
-                                                        <span className="text-xs font-semibold text-green-400 bg-green-900/50 px-2 py-0.5 rounded-full">
-                                                          -{formatInteger(product.discountPercentage!)}%
-                                                        </span>
-                                                    }
+                                                <div className="flex items-center gap-4">
+                                                    <img src={product.imageUrl} alt={product.name} className="h-14 w-14 flex-shrink-0 rounded-lg object-contain bg-background/50"/>
+                                                    <div className="flex-grow">
+                                                        <div className="font-bold text-text-primary text-base flex items-center gap-x-3 flex-wrap">
+                                                            <span>{product.name}</span>
+                                                            {!isAvailable && (
+                                                                <span className="text-xs font-semibold text-red-400 bg-red-500/10 px-2 py-1 rounded-full">{t('unavailable')}</span>
+                                                            )}
+                                                            {hasDiscount && (
+                                                                <span className="text-xs font-semibold text-green-400 bg-green-500/10 px-2 py-1 rounded-full">-{formatInteger(product.discountPercentage!)}%</span>
+                                                            )}
+                                                        </div>
+                                                        <p className="font-normal text-sm text-text-secondary mt-1">{getCategoryNameById(product.categoryId)}</p>
+                                                    </div>
                                                 </div>
-                                                <p className="font-normal text-text-secondary">{getCategoryNameById(product.categoryId)}</p>
-                                            </th>
-                                            <td className="px-6 py-4 text-center font-semibold">
+                                            </td>
+                                            <td className="px-6 py-4 text-center whitespace-nowrap">
+                                                <span className="font-semibold text-lg text-text-secondary">${formatNumber(product.normalPriceUSD)}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-center whitespace-nowrap">
+                                                 <span className="font-semibold text-lg text-text-secondary">${formatNumber(product.memberPriceUSD)}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-center whitespace-nowrap">
                                                 <div className="flex flex-col items-center">
-                                                    <span className="font-bold text-lg text-accent">{formatCurrency(product.price)}</span>
-                                                    {hasDiscount && <span className="text-xs text-text-secondary line-through">{formatCurrency(product.originalPrice!)}</span>}
+                                                    <span className="font-bold text-xl text-accent">{formatCurrency(product.price)}</span>
+                                                    {hasDiscount && <span className="text-sm text-text-secondary line-through">{formatCurrency(product.originalPrice!)}</span>}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 text-center font-bold text-accent">
-                                                {formatInteger(product.points)}
+                                            <td className="px-6 py-4 text-center whitespace-nowrap">
+                                                <div className="flex flex-col items-center">
+                                                    <span className="font-bold text-xl text-primary">{formatCurrency(product.memberPrice)}</span>
+                                                     {hasDiscount && product.originalMemberPrice && <span className="text-sm text-text-secondary line-through">{formatCurrency(product.originalMemberPrice)}</span>}
+                                                </div>
                                             </td>
-                                            <td className="px-6 py-4 text-right">
+                                            <td className="px-6 py-4 text-center whitespace-nowrap">
+                                                 <span className="font-bold text-xl text-accent">{formatInteger(product.points)}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-left">
                                                 <div className="flex justify-end items-center gap-1">
                                                     {hasDiscount && (
                                                         <button 
@@ -294,7 +312,7 @@ const ProductsListPage: React.FC = () => {
                                 })
                             ) : (
                                 <tr>
-                                    <td colSpan={6} className="text-center py-16">
+                                    <td colSpan={7} className="text-center py-16">
                                         <p className="text-text-secondary">{t('noProducts')}</p>
                                     </td>
                                 </tr>

@@ -62,7 +62,7 @@ const LoadingSpinner: React.FC = () => (
             />
         </div>
 
-        <h1 className="mt-12 text-2xl font-bold tracking-wider text-text-primary animate-pulse">جاري تجهيز كل شيء...</h1>
+        <h1 className="mt-12 text-2xl font-bold tracking-wider text-text-primary animate-pulse">جاري تجهيز الصفحة وتحميل البيانات...</h1>
         <p className="mt-2 text-text-secondary">لحظات من فضلك</p>
         
         <style>{`
