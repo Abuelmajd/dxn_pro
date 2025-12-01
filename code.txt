@@ -62,16 +62,16 @@
 // To disable a notification method, leave its values as empty strings ('').
 const MERCHANT_NOTIFICATIONS = {
   // Your email address to receive notifications.
-  EMAIL: '', // e.g., 'abuelmajd3@gmail.com'
+  EMAIL: '', // e.g., 'email@email.com'
   
   // --- Telegram Bot Settings ---
   // 1. Create a new bot by talking to @BotFather on Telegram.
   // 2. BotFather will give you a "token". Paste it here.
-  TELEGRAM_BOT_TOKEN: '', // e.g., '8465067674:AAFRQf4VOAi80fiBsMPP8JUGal0DRAuMpy8'
+  TELEGRAM_BOT_TOKEN: '', // e.g., '1111111111111111'
   
   // 3. Send a message to your new bot.
   // 4. Then, get your Chat ID by talking to a bot like @userinfobot. It's usually a long number.
-  TELEGRAM_CHAT_ID: '' // e.g., '940722838'
+  TELEGRAM_CHAT_ID: '' // e.g., '1111111111'
 };
 
 // --- CONFIGURATION ---
