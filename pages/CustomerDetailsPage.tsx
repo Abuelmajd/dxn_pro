@@ -5,10 +5,13 @@ import { Order, Customer } from '../types';
 
 const OrderDetails: React.FC<{ order: Order }> = ({ order }) => {
     const { t, formatCurrency, formatInteger } = useAppContext();
+    const subtotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
     return (
     <div className="mt-6 pt-4 border-t border-border">
         <div className="grid grid-cols-5 gap-4 pb-2 mb-2 border-b border-border text-sm font-medium text-text-secondary">
-            <div className="col-span-2">{t('product')}</div>
+            {/* FIX: Replaced invalid translation key 'product' with 'productName'. */}
+            <div className="col-span-2">{t('productName')}</div>
             <div className="text-center">{t('unitPrice')}</div>
             <div className="text-center">{t('quantity')}</div>
             <div className="text-end">{t('subtotal')}</div>
@@ -26,8 +29,18 @@ const OrderDetails: React.FC<{ order: Order }> = ({ order }) => {
         </ul>
 
         <div className="mt-6 pt-4 border-t border-border/80 flex justify-end">
-            <div className="w-full max-w-xs space-y-2">
-                 <div className="flex justify-between font-bold text-lg text-text-primary">
+             <div className="w-full max-w-xs space-y-2">
+                <div className="flex justify-between text-text-primary">
+                    <span>{t('subtotal')}:</span>
+                    <span>{formatCurrency(subtotal)}</span>
+                </div>
+                {order.shippingCost && order.shippingCost > 0 && (
+                    <div className="flex justify-between text-text-primary">
+                        <span>{t('shippingCost')}:</span>
+                        <span>{formatCurrency(order.shippingCost)}</span>
+                    </div>
+                )}
+                 <div className="flex justify-between font-bold text-lg text-text-primary pt-2 border-t border-border mt-2">
                     <span>{t('grandTotal')}:</span>
                     <span>{formatCurrency(order.totalPrice)}</span>
                 </div>
@@ -116,8 +129,17 @@ const CustomerDetailsPage: React.FC = () => {
             `  ${formatInteger(item.quantity)} x ${formatCurrency(item.price)} = ${formatCurrency(item.price * item.quantity)}`
         ).join('\n\n');
 
-        const footer = `\n------------------------------------\n` +
-                       `${t('grandTotal')}: ${formatCurrency(order.totalPrice)}`;
+        const subtotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+        let footer = `\n------------------------------------\n` +
+                     `${t('subtotal')}: ${formatCurrency(subtotal)}`;
+
+        if (order.shippingCost && order.shippingCost > 0) {
+            footer += `\n${t('shippingCost')}: ${formatCurrency(order.shippingCost)}`;
+        }
+
+        footer += `\n------------------------------------\n` +
+                  `${t('grandTotal')}: ${formatCurrency(order.totalPrice)}`;
 
         return header + itemsText + footer;
     };

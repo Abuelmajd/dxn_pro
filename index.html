@@ -83,6 +83,15 @@
         background: var(--color-primary);
       }
 
+      /* Utility to hide scrollbar */
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;  /* IE and Edge */
+        scrollbar-width: none;  /* Firefox */
+      }
+
       /* Add LTR/RTL specific spacing for .space-s-4 used in Header */
       [dir="ltr"] .space-s-4 > :not([hidden]) ~ :not([hidden]) {
         margin-left: 1rem;

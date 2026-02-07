@@ -1,11 +1,17 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Order, Customer } from '../types';
+import { Order, Customer, OrderStatus } from '../types';
 import { Link } from 'react-router-dom';
 
 const TrashIcon: React.FC = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+);
+
+const PencilIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" />
     </svg>
 );
 
@@ -88,10 +94,13 @@ const ConfirmationModal: React.FC<{
 
 const OrderDetails: React.FC<{ order: Order }> = ({ order }) => {
     const { t, formatCurrency, formatInteger } = useAppContext();
+    const subtotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
     return (
     <div className="mt-6 pt-4 border-t border-border">
         <div className="grid grid-cols-5 gap-4 pb-2 mb-2 border-b border-border text-sm font-medium text-text-secondary">
-            <div className="col-span-2">{t('product')}</div>
+            {/* FIX: Replaced invalid translation key 'product' with 'productName'. */}
+            <div className="col-span-2">{t('productName')}</div>
             <div className="text-center">{t('unitPrice')}</div>
             <div className="text-center">{t('quantity')}</div>
             <div className="text-end">{t('subtotal')}</div>
@@ -110,7 +119,17 @@ const OrderDetails: React.FC<{ order: Order }> = ({ order }) => {
 
         <div className="mt-6 pt-4 border-t border-border/80 flex justify-end">
             <div className="w-full max-w-xs space-y-2">
-                 <div className="flex justify-between font-bold text-lg text-text-primary">
+                <div className="flex justify-between text-text-primary">
+                    <span>{t('subtotal')}:</span>
+                    <span>{formatCurrency(subtotal)}</span>
+                </div>
+                {order.shippingCost && order.shippingCost > 0 && (
+                    <div className="flex justify-between text-text-primary">
+                        <span>{t('shippingCost')}:</span>
+                        <span>{formatCurrency(order.shippingCost)}</span>
+                    </div>
+                )}
+                 <div className="flex justify-between font-bold text-lg text-text-primary pt-2 border-t border-border mt-2">
                     <span>{t('grandTotal')}:</span>
                     <span>{formatCurrency(order.totalPrice)}</span>
                 </div>
@@ -121,26 +140,46 @@ const OrderDetails: React.FC<{ order: Order }> = ({ order }) => {
 };
 
 
+const StatusBadge: React.FC<{ status: OrderStatus }> = ({ status }) => {
+    const { t } = useAppContext();
+    const statusInfo = {
+        pending: { text: t('pending'), color: 'bg-yellow-500/20 text-yellow-400' },
+        paid: { text: t('paid'), color: 'bg-blue-500/20 text-blue-400' },
+        delivered: { text: t('delivered'), color: 'bg-green-500/20 text-green-400' },
+        cancelled: { text: t('cancelled'), color: 'bg-red-500/20 text-red-400' },
+    };
+    const { text, color } = statusInfo[status] || statusInfo.pending;
+    return (
+        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${color}`}>
+            {text}
+        </span>
+    );
+};
+
 const OrdersPage: React.FC = () => {
-    const { orders, t, formatCurrency, formatDate, deleteOrder, isUpdating, getCustomerById, formatInteger } = useAppContext();
+    const { orders, t, formatCurrency, formatDate, deleteOrder, isUpdating, getCustomerById, formatInteger, updateOrderStatus } = useAppContext();
     const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
     const [activeShareMenu, setActiveShareMenu] = useState<string | null>(null);
+    const [statusFilter, setStatusFilter] = useState<OrderStatus | ''>('');
 
     useEffect(() => {
         if (!activeShareMenu) return;
-
         const closeMenu = () => setActiveShareMenu(null);
-        
         setTimeout(() => window.addEventListener('click', closeMenu), 0);
         return () => window.removeEventListener('click', closeMenu);
     }, [activeShareMenu]);
 
+    const filteredOrders = useMemo(() => {
+        if (!statusFilter) return orders;
+        return orders.filter(order => order.status === statusFilter);
+    }, [orders, statusFilter]);
+
     const ordersByCustomer = useMemo(() => {
-        return orders.reduce((acc, order) => {
+        return filteredOrders.reduce((acc, order) => {
             (acc[order.customerName] = acc[order.customerName] || []).push(order);
             return acc;
         }, {} as Record<string, Order[]>);
-    }, [orders]);
+    }, [filteredOrders]);
 
     const handleDeleteRequest = (order: Order, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -154,8 +193,8 @@ const OrdersPage: React.FC = () => {
         setOrderToDelete(null);
     };
 
-    const handleCancelDelete = () => {
-        setOrderToDelete(null);
+    const handleStatusChange = async (orderId: string, status: OrderStatus) => {
+        await updateOrderStatus(orderId, status);
     };
 
     const generateInvoiceText = (order: Order, customer: Customer) => {
@@ -169,11 +208,21 @@ const OrdersPage: React.FC = () => {
             `  ${formatInteger(item.quantity)} x ${formatCurrency(item.price)} = ${formatCurrency(item.price * item.quantity)}`
         ).join('\n\n');
 
-        const footer = `\n------------------------------------\n` +
-                       `${t('grandTotal')}: ${formatCurrency(order.totalPrice)}`;
+        const subtotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+        let footer = `\n------------------------------------\n` +
+                     `${t('subtotal')}: ${formatCurrency(subtotal)}`;
+
+        if (order.shippingCost && order.shippingCost > 0) {
+            footer += `\n${t('shippingCost')}: ${formatCurrency(order.shippingCost)}`;
+        }
+
+        footer += `\n------------------------------------\n` +
+                  `${t('grandTotal')}: ${formatCurrency(order.totalPrice)}`;
 
         return header + itemsText + footer;
     };
+
 
     const handleShare = (type: 'whatsapp' | 'email', order: Order) => {
         const customer = getCustomerById(order.customerId);
@@ -186,7 +235,6 @@ const OrdersPage: React.FC = () => {
             const whatsappNumber = customer.whatsapp || customer.phone;
             if (whatsappNumber) {
                 let cleanedNumber = String(whatsappNumber).replace(/\D/g, '');
-                // Prepend international prefix to the full number, including the leading zero as requested.
                 window.open(`https://wa.me/972${cleanedNumber}?text=${encodedText}`, '_blank');
             }
         } else if (type === 'email') {
@@ -199,7 +247,7 @@ const OrdersPage: React.FC = () => {
 
     return (
         <div className="max-w-4xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-text-primary">{t('invoicesAndSales')}</h1>
                     <p className="mt-1 text-text-secondary">{t('allInvoicesIssued')}</p>
@@ -207,6 +255,22 @@ const OrdersPage: React.FC = () => {
                 <Link to="/admin/new-order" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
                   {t('newInvoice')}
                 </Link>
+            </div>
+
+            <div className="mb-6">
+                <label htmlFor="statusFilter" className="sr-only">{t('filterByStatus')}</label>
+                <select 
+                    id="statusFilter"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as OrderStatus | '')}
+                    className="w-full p-3 bg-card rounded-lg shadow-sm border border-border focus:ring-2 focus:ring-accent focus:border-accent outline-none"
+                >
+                    <option value="">{t('allStatuses')}</option>
+                    <option value="pending">{t('pending')}</option>
+                    <option value="paid">{t('paid')}</option>
+                    <option value="delivered">{t('delivered')}</option>
+                    <option value="cancelled">{t('cancelled')}</option>
+                </select>
             </div>
 
             {Object.keys(ordersByCustomer).length === 0 ? (
@@ -229,15 +293,37 @@ const OrdersPage: React.FC = () => {
                             <div className="divide-y divide-border">
                                 {customerOrders.map(order => (
                                     <details key={order.id} className="p-4 group">
-                                        <summary className="flex justify-between items-center cursor-pointer list-none">
-                                            <div>
+                                        <summary className="flex justify-between items-center cursor-pointer list-none gap-2">
+                                            <div className="flex-grow">
                                                 <p className="font-semibold text-text-primary">{t('invoiceNo')}: {order.id.slice(-6)}</p>
                                                 <p className="text-sm text-text-secondary">
                                                     {formatDate(order.createdAt)}
                                                 </p>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-bold text-lg text-text-primary">{formatCurrency(order.totalPrice)}</span>
+                                            <div className="flex items-center gap-x-2 sm:gap-x-3 flex-wrap justify-end">
+                                                <StatusBadge status={order.status} />
+                                                <span className="font-bold text-lg text-text-primary hidden sm:inline">{formatCurrency(order.totalPrice)}</span>
+                                                <select 
+                                                    value={order.status} 
+                                                    onChange={(e) => handleStatusChange(order.id, e.target.value as OrderStatus)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="bg-card-secondary border border-border rounded-md text-xs p-1 focus:ring-accent focus:border-accent"
+                                                    aria-label={t('changeStatus')}
+                                                >
+                                                    <option value="pending">{t('pending')}</option>
+                                                    <option value="paid">{t('paid')}</option>
+                                                    <option value="delivered">{t('delivered')}</option>
+                                                    <option value="cancelled">{t('cancelled')}</option>
+                                                </select>
+
+                                                <Link
+                                                    to={`/admin/orders/${order.id}/edit`}
+                                                    title={t('editInvoice')}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="p-2 rounded-full text-text-secondary hover:bg-card-secondary hover:text-accent transition-colors"
+                                                >
+                                                    <PencilIcon />
+                                                </Link>
                                                 <div className="relative">
                                                     <button 
                                                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveShareMenu(activeShareMenu === order.id ? null : order.id); }} 
@@ -252,22 +338,8 @@ const OrdersPage: React.FC = () => {
                                                             onClick={(e) => { e.stopPropagation(); }}
                                                         >
                                                             <ul className="py-1">
-                                                                <li>
-                                                                    <button 
-                                                                        onClick={() => handleShare('whatsapp', order)}
-                                                                        className="w-full text-start px-4 py-2 text-sm text-text-primary hover:bg-card-secondary flex items-center gap-3"
-                                                                    >
-                                                                        <WhatsAppIcon /> {t('shareViaWhatsapp')}
-                                                                    </button>
-                                                                </li>
-                                                                <li>
-                                                                    <button 
-                                                                        onClick={() => handleShare('email', order)}
-                                                                        className="w-full text-start px-4 py-2 text-sm text-text-primary hover:bg-card-secondary flex items-center gap-3"
-                                                                    >
-                                                                        <EmailIcon /> {t('shareViaEmail')}
-                                                                    </button>
-                                                                </li>
+                                                                <li><button onClick={() => handleShare('whatsapp', order)} className="w-full text-start px-4 py-2 text-sm text-text-primary hover:bg-card-secondary flex items-center gap-3"><WhatsAppIcon /> {t('shareViaWhatsapp')}</button></li>
+                                                                <li><button onClick={() => handleShare('email', order)} className="w-full text-start px-4 py-2 text-sm text-text-primary hover:bg-card-secondary flex items-center gap-3"><EmailIcon /> {t('shareViaEmail')}</button></li>
                                                             </ul>
                                                         </div>
                                                     )}
@@ -295,7 +367,7 @@ const OrdersPage: React.FC = () => {
             )}
             <ConfirmationModal 
                 isOpen={!!orderToDelete}
-                onClose={handleCancelDelete}
+                onClose={() => setOrderToDelete(null)}
                 onConfirm={handleConfirmDelete}
                 title={t('confirmDeletionTitle')}
                 message={t('confirmDeleteOrder')}

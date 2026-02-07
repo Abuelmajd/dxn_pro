@@ -109,17 +109,42 @@ const CustomersPage: React.FC = () => {
         return stats;
     }, [orders]);
 
+    const sortedCustomers = useMemo(() => {
+        const lastOrderDateMap = new Map<string, Date>();
+        orders.forEach(order => {
+            const currentLastDate = lastOrderDateMap.get(order.customerId);
+            const orderDate = new Date(order.createdAt);
+            if (!currentLastDate || orderDate > currentLastDate) {
+                lastOrderDateMap.set(order.customerId, orderDate);
+            }
+        });
+
+        return [...customers].sort((a, b) => {
+            const aLastOrder = lastOrderDateMap.get(a.id);
+            const bLastOrder = lastOrderDateMap.get(b.id);
+
+            if (bLastOrder && !aLastOrder) return 1;
+            if (aLastOrder && !bLastOrder) return -1;
+            
+            if (aLastOrder && bLastOrder) {
+                return bLastOrder.getTime() - aLastOrder.getTime();
+            }
+            
+            return new Date(b.registrationDate).getTime() - new Date(a.registrationDate).getTime();
+        });
+    }, [customers, orders]);
+
     const filteredCustomers = useMemo(() => {
         if (!searchTerm.trim()) {
-            return customers;
+            return sortedCustomers;
         }
         const lowercasedFilter = searchTerm.toLowerCase().trim();
-        return customers.filter(customer => {
+        return sortedCustomers.filter(customer => {
             const nameMatch = customer.name.toLowerCase().includes(lowercasedFilter);
             const phoneMatch = String(customer.phone).includes(lowercasedFilter);
             return nameMatch || phoneMatch;
         });
-    }, [customers, searchTerm]);
+    }, [sortedCustomers, searchTerm]);
 
     const formatWhatsAppLink = (number: string) => {
         let cleaned = String(number).replace(/\D/g, '');

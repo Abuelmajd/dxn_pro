@@ -1,5 +1,6 @@
+
 import React, { createContext, useState, useContext, ReactNode, useEffect, useMemo, useCallback } from 'react';
-import { Product, Order, CartItem, Customer, AppSettings, Language, NumberFormat, Currency, Expense, CustomerSelection, Category, HealthCheckResult, Discount } from '../types';
+import { Product, Order, CartItem, Customer, AppSettings, Language, NumberFormat, Currency, Expense, CustomerSelection, Category, HealthCheckResult, Discount, OrderStatus } from '../types';
 import { translations, TranslationKeys } from '../translations';
 
 // ================================================================================================
@@ -28,6 +29,7 @@ type AddProductData = Omit<Product, 'id' | 'isAvailable'>;
 
 interface AppContextType {
   products: Product[];
+  rawProducts: Product[]; // Expose raw products for base price calculations
   orders: Order[];
   customers: Customer[];
   expenses: Expense[];
@@ -51,11 +53,14 @@ interface AppContextType {
   formatInteger: (num: number) => string;
   formatDate: (date: Date) => string;
   formatDateTime: (date: Date) => string;
-  addOrder: (customerData: Omit<Customer, 'id' | 'registrationDate'>, items: CartItem[], selectionId?: string | null) => Promise<boolean>;
+  addOrder: (customerData: Omit<Customer, 'id' | 'registrationDate'>, items: CartItem[], shippingCost: number, selectionId?: string | null) => Promise<boolean>;
+  updateOrder: (order: Order, customer: Customer) => Promise<boolean>;
+  updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<boolean>;
   addProduct: (productData: AddProductData) => Promise<boolean>;
   updateProduct: (productData: Product) => Promise<boolean>;
   deleteProduct: (productId: string) => Promise<{ success: boolean; error?: string }>;
   toggleProductAvailability: (productId: string) => Promise<boolean>;
+  toggleProductNewlyArrived: (productId: string) => Promise<boolean>;
   deleteOrder: (orderId: string) => Promise<boolean>;
   deleteCustomer: (customerId: string) => Promise<boolean>;
   addExpense: (expenseData: Omit<Expense, 'id' | 'date'> & { date: Date }) => Promise<boolean>;
@@ -63,10 +68,12 @@ interface AppContextType {
   addCustomerSelection: (selectionData: Omit<CustomerSelection, 'id' | 'createdAt' | 'status'>) => Promise<boolean>;
   processSelection: (selectionId: string) => Promise<boolean>;
   getProductById: (id: string) => Product | undefined;
+  getOrderById: (id: string) => Order | undefined;
   getCustomerById: (id: string) => Customer | undefined;
   getCategoryNameById: (categoryId: string) => string;
   runHealthCheck: () => Promise<HealthCheckResult[]>;
   fetchData: (isInitialLoad?: boolean) => Promise<void>;
+  bulkUpdateProductPrices: (payload: { productIds: string[]; updateType: 'profitMargin' | 'exchangeRate'; value: number }) => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -91,7 +98,7 @@ function loadLocalState<T>(key: string, defaultValue: T): T {
   }
 };
 
-const parseData = (data: any) => {
+const parseData = (data: any, productOrder: string[] = []) => {
   if (!data) return { products: [], orders: [], customers: [], expenses: [], customerSelections: [], categories: [], settings: DEFAULT_SETTINGS };
 
   function parseWithDates<T>(items: any[]): T[] {
@@ -100,12 +107,40 @@ const parseData = (data: any) => {
       ...(item.createdAt && { createdAt: new Date(item.createdAt) }),
       ...(item.date && { date: new Date(item.date) }),
       ...(item.registrationDate && { registrationDate: new Date(item.registrationDate) }),
+      ...(item.status ? {} : { status: 'pending' }), // Default status for old orders
     }));
   };
+
+  const ordersWithRecalculatedPoints = (data.orders || []).map((order: Order) => {
+    // FIX: Recalculate totalPoints if it's missing or invalid in the sheet data.
+    // This provides backward compatibility and ensures data integrity for reports.
+    if (typeof order.totalPoints !== 'number' || isNaN(order.totalPoints)) {
+      if (order.items && Array.isArray(order.items)) {
+        order.totalPoints = order.items.reduce((sum, item) => sum + ((item.points || 0) * (item.quantity || 0)), 0);
+      } else {
+        order.totalPoints = 0;
+      }
+    }
+    return order;
+  });
   
+  let parsedProducts: Product[] = data.products || [];
+
+  if (productOrder.length > 0 && parsedProducts.length > 0) {
+      const productMap = new Map(parsedProducts.map(p => [p.id, p]));
+      const sortedProducts = productOrder
+        .map(id => productMap.get(id))
+        .filter((p): p is Product => p !== undefined);
+      
+      const productsInOrder = new Set(productOrder);
+      const newProductsFromSheet = parsedProducts.filter(p => !productsInOrder.has(p.id));
+      
+      parsedProducts = [...sortedProducts, ...newProductsFromSheet];
+  }
+
   return {
-    products: data.products || [],
-    orders: (parseWithDates<Order>(data.orders || [])).sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime()),
+    products: parsedProducts,
+    orders: (parseWithDates<Order>(ordersWithRecalculatedPoints)).sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime()),
     customers: parseWithDates<Customer>(data.customers || []),
     expenses: (parseWithDates<Expense>(data.expenses || [])).sort((a,b) => b.date.getTime() - a.date.getTime()),
     customerSelections: parseWithDates<CustomerSelection>(data.customerSelections || []),
@@ -135,6 +170,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const savedTheme = loadLocalState('appTheme', 'dark');
     const savedLang = loadLocalState('appLang', 'ar');
     return { ...DEFAULT_SETTINGS, theme: savedTheme, language: savedLang };
+  });
+
+  const [newlyArrivedProductIds, setNewlyArrivedProductIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('dxnApp_newlyArrived');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (e) {
+      console.error("Failed to parse newly arrived product IDs from localStorage", e);
+      return new Set();
+    }
   });
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => loadLocalState('isAuthenticated', false));
@@ -174,6 +219,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         finalMemberPrice = memberPriceWithMargin * discountMultiplier;
       }
 
+      const isNewlyArrived = newlyArrivedProductIds.has(p.id);
+
       return {
         ...p,
         price: finalPrice,
@@ -181,9 +228,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         originalPrice,
         originalMemberPrice,
         discountPercentage,
+        isNewlyArrived,
       };
     });
-  }, [rawProducts, settings.profitMarginILS, settings.discounts]);
+  }, [rawProducts, settings.profitMarginILS, settings.discounts, newlyArrivedProductIds]);
 
   const callGoogleScript = useCallback(async (action: string, payload?: any, returnFullResponse = false) => {
     setApiError(null);
@@ -235,7 +283,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const data = await callGoogleScript('getAllData');
     if (data) {
-      const parsed = parseData(data);
+      let productOrder: string[] = [];
+      try {
+        const savedOrder = localStorage.getItem('dxnApp_productOrder');
+        if (savedOrder) {
+          productOrder = JSON.parse(savedOrder);
+        }
+      } catch (e) {
+        console.error("Failed to parse product order from localStorage", e);
+      }
+
+      const parsed = parseData(data, productOrder);
       setRawProducts(parsed.products);
       setOrders(parsed.orders);
       setCustomers(parsed.customers);
@@ -390,9 +448,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   }
   
-  const addOrder = async (customerData: Omit<Customer, 'id' | 'registrationDate'>, items: CartItem[], selectionId: string | null = null) => {
+  const addOrder = async (customerData: Omit<Customer, 'id' | 'registrationDate'>, items: CartItem[], shippingCost: number, selectionId: string | null = null) => {
     setIsUpdating(true);
-    const result = await callGoogleScript('addOrder', { customerData, items, selectionId });
+    const result = await callGoogleScript('addOrder', { customerData, items, shippingCost, selectionId });
     setIsUpdating(false);
     if (result) {
         const newOrderWithDate = { ...result.newOrder, createdAt: new Date(result.newOrder.createdAt) };
@@ -423,6 +481,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return false;
   };
 
+  const updateOrder = async (orderData: Order, customerData: Customer): Promise<boolean> => {
+    setIsUpdating(true);
+    const result = await callGoogleScript('updateOrder', { order: orderData, customer: customerData });
+    setIsUpdating(false);
+    if (result) {
+        const updatedOrderWithDate = { ...result.updatedOrder, createdAt: new Date(result.updatedOrder.createdAt) };
+        setOrders(prev => prev.map(o => o.id === updatedOrderWithDate.id ? updatedOrderWithDate : o));
+        
+        const updatedCustomerWithDate = { ...result.updatedCustomer, registrationDate: new Date(result.updatedCustomer.registrationDate) };
+        setCustomers(prev => prev.map(c => c.id === updatedCustomerWithDate.id ? updatedCustomerWithDate : c));
+        
+        return true;
+    }
+    return false;
+  };
+  
+  const updateOrderStatus = async (orderId: string, status: OrderStatus): Promise<boolean> => {
+    const originalOrders = orders;
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    
+    const result = await callGoogleScript('updateOrderStatus', { orderId, status });
+
+    if (result) {
+        return true;
+    } else {
+        setOrders(originalOrders);
+        return false;
+    }
+  };
+
   const addProduct = async (productData: AddProductData) => {
     setIsUpdating(true);
     const newProduct = await callGoogleScript('addProduct', productData);
@@ -440,6 +528,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsUpdating(false);
     if (updatedProduct) {
         setRawProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+        return true;
+    }
+    return false;
+  };
+
+  const bulkUpdateProductPrices = async (payload: { productIds: string[]; updateType: 'profitMargin' | 'exchangeRate'; value: number }) => {
+    setIsUpdating(true);
+    const updatedProductsList: Product[] = await callGoogleScript('bulkUpdateProductPrices', payload);
+    setIsUpdating(false);
+
+    if (updatedProductsList) {
+        setRawProducts(prev => {
+            const updatedProductsMap = new Map(updatedProductsList.map(p => [p.id, p]));
+            return prev.map(p => updatedProductsMap.get(p.id) || p);
+        });
         return true;
     }
     return false;
@@ -468,13 +571,60 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const toggleProductAvailability = async (productId: string) => {
     setIsUpdating(true);
+    const productBeforeToggle = rawProducts.find(p => p.id === productId);
+
     const result = await callGoogleScript('toggleProductAvailability', { productId });
     setIsUpdating(false);
     if (result) {
-        setRawProducts(prev => prev.map(p => p.id === result.productId ? { ...p, isAvailable: result.isAvailable } : p));
+        setRawProducts(prev => {
+            const productToUpdate = prev.find(p => p.id === result.productId);
+            if (!productToUpdate) return prev;
+
+            const updatedProduct = { ...productToUpdate, isAvailable: result.isAvailable };
+            
+            let newProductList = [...prev];
+
+            // If product is now available AND it was previously unavailable
+            if (result.isAvailable && productBeforeToggle && !productBeforeToggle.isAvailable) {
+                // Move it to the end of the list.
+                newProductList = prev.filter(p => p.id !== result.productId);
+                newProductList.push(updatedProduct);
+            } else {
+                // Otherwise, just update it in its place.
+                newProductList = prev.map(p => p.id === result.productId ? updatedProduct : p);
+            }
+            
+            // Save the new order to localStorage
+            try {
+                const productOrder = newProductList.map(p => p.id);
+                localStorage.setItem('dxnApp_productOrder', JSON.stringify(productOrder));
+            } catch (e) {
+                console.error("Failed to save product order to localStorage", e);
+            }
+
+            return newProductList;
+        });
         return true;
     }
     return false;
+  };
+
+  const toggleProductNewlyArrived = async (productId: string) => {
+    setNewlyArrivedProductIds(prevIds => {
+      const newIds = new Set(prevIds);
+      if (newIds.has(productId)) {
+        newIds.delete(productId);
+      } else {
+        newIds.add(productId);
+      }
+      try {
+        localStorage.setItem('dxnApp_newlyArrived', JSON.stringify(Array.from(newIds)));
+      } catch (e) {
+        console.error("Failed to save newly arrived product IDs to localStorage", e);
+      }
+      return newIds;
+    });
+    return Promise.resolve(true);
   };
 
   const deleteOrder = async (orderId: string) => {
@@ -548,11 +698,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
   
   const getProductById = (id: string): Product | undefined => products.find(p => p.id === id);
+  const getOrderById = (id: string): Order | undefined => orders.find(o => o.id === id);
   const getCustomerById = (id: string): Customer | undefined => customers.find(c => c.id === id);
   const getCategoryNameById = (categoryId: string): string => categories.find(c => c.id === categoryId)?.name || categoryId;
 
   const contextValue: AppContextType = {
     products,
+    rawProducts,
     orders,
     customers,
     expenses,
@@ -577,10 +729,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     formatDate,
     formatDateTime,
     addOrder,
+    updateOrder,
+    updateOrderStatus,
     addProduct,
     updateProduct,
     deleteProduct,
     toggleProductAvailability,
+    toggleProductNewlyArrived,
     deleteOrder,
     deleteCustomer,
     addExpense,
@@ -588,10 +743,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addCustomerSelection,
     processSelection,
     getProductById,
+    getOrderById,
     getCustomerById,
     getCategoryNameById,
     runHealthCheck,
     fetchData,
+    bulkUpdateProductPrices,
   };
 
   return (

@@ -102,7 +102,7 @@ const VerticalBarChart: React.FC<VerticalBarChartProps> = ({ data, valueFormatte
 
 // Dashboard Page Component
 const DashboardPage: React.FC = () => {
-  const { orders, expenses, t, formatCurrency, formatNumber, settings, getCustomerById, formatInteger } = useAppContext();
+  const { orders, expenses, t, formatCurrency, settings, getCustomerById, formatInteger } = useAppContext();
   
   // --- Data Aggregation ---
   const totalSales = orders.reduce((sum, order) => sum + order.totalPrice, 0);
@@ -111,7 +111,7 @@ const DashboardPage: React.FC = () => {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const totalPointsThisMonth = orders
       .filter(order => new Date(order.createdAt) >= startOfMonth)
-      .reduce((sum, order) => sum + (order.totalPoints || 0), 0);
+      .reduce((sum, order) => sum + (Number(order.totalPoints) || 0), 0);
   
   const bestSellingProducts = useMemo(() => {
     const productSales: { [key: string]: { name: string; quantity: number } } = {};
@@ -179,7 +179,7 @@ const DashboardPage: React.FC = () => {
         <StatCard title={t('totalSales')} value={formatCurrency(totalSales)} icon={<DollarSignIcon />} color="bg-gradient-to-br from-accent to-yellow-600" />
         <StatCard title={t('totalExpenses')} value={formatCurrency(totalExpenses)} icon={<TrendingDownIcon />} color="bg-gradient-to-br from-red-500 to-red-600" />
         <StatCard title={t('ordersCount')} value={formatInteger(orders.length)} icon={<ClipboardListIcon />} color="bg-gradient-to-br from-primary to-primary-hover" />
-        <StatCard title={t('totalPointsThisMonth')} value={formatNumber(totalPointsThisMonth)} icon={<StarIcon />} color="bg-gradient-to-br from-teal-500 to-teal-600" />
+        <StatCard title={t('totalPointsThisMonth')} value={formatInteger(totalPointsThisMonth)} icon={<StarIcon />} color="bg-gradient-to-br from-teal-500 to-teal-600" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">

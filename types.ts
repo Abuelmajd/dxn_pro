@@ -50,17 +50,32 @@ export interface Product {
   originalPrice?: number; // Original price before discount
   originalMemberPrice?: number; // Original member price before discount
   discountPercentage?: number;
+  isNewlyArrived?: boolean;
 }
 
 export interface CartItem {
   productId: string;
   name: string;
-  price: number; // The final price for this item in the cart
   quantity: number;
   points: number;
-  originalPrice?: number; // The price before any discount was applied for this transaction
-  appliedDiscountPercentage?: number; // The discount % that was available
+  
+  // Base prices in ILS without any profit margin or transaction-specific discounts
+  basePrice: number; 
+  baseMemberPrice: number;
+
+  // Final calculated price for this item in this specific order
+  price: number;
+  
+  // Which price type is currently selected for calculation
+  selectedPriceType: 'normal' | 'member';
+
+  // Discount info that was available at the time of adding to cart
+  originalPrice?: number; 
+  appliedDiscountPercentage?: number;
 }
+
+
+export type OrderStatus = 'pending' | 'paid' | 'delivered' | 'cancelled';
 
 // FIX: Completed the Order interface and added createdAt property
 export interface Order {
@@ -70,7 +85,9 @@ export interface Order {
   items: CartItem[];
   totalPrice: number;
   totalPoints: number;
+  shippingCost?: number; // Add shipping cost
   createdAt: Date;
+  status: OrderStatus;
 }
 
 // FIX: Added missing Expense type definition

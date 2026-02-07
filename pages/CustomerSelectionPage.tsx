@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { CartItem, Product } from '../types';
 import { Link } from 'react-router-dom';
@@ -8,11 +8,57 @@ import ButtonSpinner from '../components/ButtonSpinner';
 import Footer from '../components/Footer';
 import AddressDropdown from '../components/AddressDropdown';
 
+const ArrowLeftIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+    </svg>
+);
+const ArrowRightIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+);
+
+
 const SyncIcon: React.FC<{ isSyncing: boolean }> = ({ isSyncing }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${isSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 4a8 8 0 0113.856 5.292M20 20a8 8 0 01-13.856-5.292" />
     </svg>
 );
+
+const NewProductCard: React.FC<{
+  product: Product,
+  onViewDetails: (product: Product) => void
+}> = ({ product, onViewDetails }) => {
+  const { t, formatCurrency } = useAppContext();
+  const hasDiscount = !!product.discountPercentage && typeof product.originalPrice === 'number';
+
+  return (
+    <div className="w-48 flex-shrink-0 group h-full snap-start">
+      <button 
+        onClick={() => onViewDetails(product)}
+        className="w-full h-full text-left bg-card rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent flex flex-col"
+        aria-label={`View details for ${product.name}`}
+      >
+        <div className="w-full h-32 bg-background/50 relative flex-shrink-0">
+          <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain" />
+           <div className="absolute top-2 left-2 rtl:left-auto rtl:right-2 bg-accent text-white text-xs font-bold px-2 py-1 rounded-full z-10">
+              {t('new')}
+           </div>
+        </div>
+        <div className="p-2 flex-grow flex flex-col">
+          <h4 className="font-bold text-sm text-text-primary group-hover:text-accent transition-colors min-h-[2.5rem]">{product.name}</h4>
+          <div className="mt-auto pt-2 flex items-baseline gap-2">
+            <p className="text-base font-semibold text-primary">{formatCurrency(product.price)}</p>
+            {hasDiscount && (
+              <p className="text-xs text-text-secondary line-through">{formatCurrency(product.originalPrice!)}</p>
+            )}
+          </div>
+        </div>
+      </button>
+    </div>
+  );
+};
 
 const ProductSelectionCard: React.FC<{ 
     product: Product, 
@@ -87,7 +133,7 @@ const ProductSelectionCard: React.FC<{
 
 
 const CustomerSelectionPage: React.FC = () => {    
-  const { products, categories, addCustomerSelection, t, formatCurrency, formatInteger, isUpdating, isRefreshing } = useAppContext();
+  const { products, rawProducts, categories, addCustomerSelection, t, formatCurrency, formatInteger, isUpdating, isRefreshing, settings } = useAppContext();
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -101,6 +147,83 @@ const CustomerSelectionPage: React.FC = () => {
   const [view, setView] = useState<'browsing' | 'checkout'>('browsing');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
+  // New state and refs for scrolling
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollBackward, setCanScrollBackward] = useState(false);
+  const [canScrollForward, setCanScrollForward] = useState(false);
+
+  const newProducts = useMemo(() => 
+      [...products]
+          .filter(p => (p.isAvailable ?? true) && p.isNewlyArrived === true)
+          .reverse(), 
+  [products]);
+
+  const checkScrollability = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (el) {
+        const isRTL = settings.language === 'ar';
+        const tolerance = 2; // Allow for pixel rounding errors
+        const hasOverflow = el.scrollWidth > el.clientWidth + tolerance;
+        
+        if (!hasOverflow) {
+            setCanScrollBackward(false);
+            setCanScrollForward(false);
+            return;
+        }
+
+        const currentScroll = el.scrollLeft;
+        const maxScroll = el.scrollWidth - el.clientWidth;
+        
+        if (isRTL) {
+            // For RTL in modern browsers (WebKit/Blink), scrollLeft is 0 at the rightmost end
+            // and becomes negative as you scroll left. maxScroll is still positive.
+            // "Forward" is scrolling left (towards -maxScroll)
+            // "Backward" is scrolling right (towards 0)
+            setCanScrollForward(Math.abs(currentScroll) < maxScroll - tolerance);
+            setCanScrollBackward(currentScroll < -tolerance);
+        } else {
+            // LTR standard behavior
+            setCanScrollBackward(currentScroll > tolerance);
+            setCanScrollForward(currentScroll < maxScroll - tolerance);
+        }
+    }
+  }, [settings.language]);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (el) {
+        const handleScroll = () => checkScrollability();
+        const handleResize = () => checkScrollability();
+
+        el.addEventListener('scroll', handleScroll, { passive: true });
+        window.addEventListener('resize', handleResize);
+        
+        // Initial check after a short delay to allow images to load and affect scrollWidth
+        const timer = setTimeout(handleResize, 300);
+
+        return () => {
+            el.removeEventListener('scroll', handleScroll);
+            window.removeEventListener('resize', handleResize);
+            clearTimeout(timer);
+        };
+    }
+  }, [checkScrollability, newProducts]);
+
+  const scroll = (direction: 'forward' | 'backward') => {
+      const el = scrollContainerRef.current;
+      if (el) {
+          const isRTL = settings.language === 'ar';
+          const scrollAmount = el.clientWidth * 0.9; // Scroll 90% of visible width
+          let modifier = direction === 'forward' ? 1 : -1;
+          
+          // In LTR, 'forward' scrolls right (+). In RTL, 'forward' should scroll left (-).
+          if(isRTL) {
+            modifier *= -1;
+          }
+
+          el.scrollBy({ left: modifier * scrollAmount, behavior: 'smooth' });
+      }
+  }
 
   const handleReset = () => {
       setIsSubmitted(false);
@@ -119,7 +242,7 @@ const CustomerSelectionPage: React.FC = () => {
     }
   };
 
-  const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCustomerAddress(e.target.value);
   };
 
@@ -131,13 +254,23 @@ const CustomerSelectionPage: React.FC = () => {
         // Add new item
         const productToAdd = products.find(p => p.id === productId);
         if (!productToAdd) return prevCart;
-        return [...prevCart, { 
+
+        // FIX: The new cart item must include all required properties from the CartItem type.
+        const rawProduct = rawProducts.find(p => p.id === productId);
+        if (!rawProduct) return prevCart; // Should not happen if productToAdd exists
+
+        const newCartItem: CartItem = {
             productId: productToAdd.id, 
             name: productToAdd.name, 
-            price: productToAdd.price, 
             quantity: quantity,
             points: productToAdd.points,
-        }];
+            price: productToAdd.price, 
+            basePrice: rawProduct.price,
+            baseMemberPrice: rawProduct.memberPrice,
+            selectedPriceType: 'normal',
+        };
+
+        return [...prevCart, newCartItem];
       } else if (existingItem && quantity <= 0) {
         // Remove item
         return prevCart.filter(item => item.productId !== productId);
@@ -157,7 +290,7 @@ const CustomerSelectionPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName.trim() || !customerPhone.trim() || !customerEmail.trim() || !customerAddress.trim()) {
+    if (!customerName.trim() || !String(customerPhone).trim() || !customerAddress.trim()) {
         setError(t('errorFillAllFields'));
         return;
     }
@@ -233,7 +366,7 @@ const CustomerSelectionPage: React.FC = () => {
                         </div>
                          <div>
                             <label htmlFor="email" className="block text-sm font-medium text-text-secondary mb-1">{t('yourEmailOptional')}</label>
-                            <input type="email" name="email" id="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent text-text-primary" required title={t('email_invalid_error')} />
+                            <input type="email" name="email" id="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} className="w-full p-2 bg-input-bg rounded-md border border-border focus:ring-accent focus:border-accent text-text-primary" title={t('email_invalid_error')} />
                         </div>
                         <AddressDropdown
                           label={t('addressOptional')}
@@ -269,7 +402,7 @@ const CustomerSelectionPage: React.FC = () => {
                         </div>
                     )}
                     {error && <p className="text-red-500 text-sm mt-4 text-center">{error}</p>}
-                    <button type="submit" disabled={isUpdating || cart.length === 0 || !customerName || !customerPhone || !customerEmail || !customerAddress} className="mt-6 w-full bg-primary text-white py-3 rounded-lg font-bold hover:bg-primary-hover disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
+                    <button type="submit" disabled={isUpdating || cart.length === 0 || !customerName || !customerPhone || !customerAddress} className="mt-6 w-full bg-primary text-white py-3 rounded-lg font-bold hover:bg-primary-hover disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors flex items-center justify-center">
                         {isUpdating ? <><ButtonSpinner /> {t('submittingSelection')}</> : t('submitSelection')}
                     </button>
                 </form>
@@ -314,6 +447,44 @@ const CustomerSelectionPage: React.FC = () => {
               <h1 className="text-4xl font-bold tracking-tight text-text-primary sm:text-5xl">{t('productSelectionPage')}</h1>
               <p className="mt-4 text-lg leading-8 text-text-secondary">{t('selectYourProducts')}</p>
           </div>
+
+          {newProducts.length > 0 && (
+            <div className="mb-12 relative">
+                <h2 className="text-2xl font-bold text-text-primary mb-4">{t('newlyArrived')}</h2>
+                
+                <div className={`absolute top-1/2 -translate-y-1/2 w-full flex justify-between items-center z-20 pointer-events-none ${settings.language === 'ar' ? 'flex-row-reverse' : ''}`}>
+                    <button 
+                        onClick={() => scroll('backward')}
+                        disabled={!canScrollBackward}
+                        className="pointer-events-auto p-2 bg-card/80 backdrop-blur-sm rounded-full shadow-lg transition-all hover:bg-card hover:scale-110 disabled:opacity-0 disabled:scale-50 ms-2"
+                        aria-label={settings.language === 'ar' ? "Scroll right" : "Scroll left"}
+                    >
+                        {settings.language === 'ar' ? <ArrowRightIcon/> : <ArrowLeftIcon/>}
+                    </button>
+                    <button 
+                        onClick={() => scroll('forward')}
+                        disabled={!canScrollForward}
+                        className="pointer-events-auto p-2 bg-card/80 backdrop-blur-sm rounded-full shadow-lg transition-all hover:bg-card hover:scale-110 disabled:opacity-0 disabled:scale-50 me-2"
+                        aria-label={settings.language === 'ar' ? "Scroll left" : "Scroll right"}
+                    >
+                        {settings.language === 'ar' ? <ArrowLeftIcon/> : <ArrowRightIcon/>}
+                    </button>
+                </div>
+
+                <div className="-mx-4 sm:-mx-6 lg:-mx-8">
+                    <div ref={scrollContainerRef} className="flex overflow-x-auto gap-6 py-4 px-4 sm:px-6 lg:px-8 scrollbar-hide snap-x snap-mandatory">
+                        {newProducts.map(p => (
+                             <NewProductCard 
+                                key={p.id}
+                                product={p}
+                                onViewDetails={setSelectedProduct}
+                            />
+                        ))}
+                    </div>
+                </div>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
               <input
               type="text"

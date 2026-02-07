@@ -55,21 +55,25 @@ const ReportsPage: React.FC = () => {
     const { orders, expenses, t, settings, formatNumber } = useAppContext();
 
     const reports = useMemo(() => {
-        const now = new Date();
+        const now = new Date(); // The current time, which we won't mutate.
         
-        const todayStart = new Date(now.setHours(0, 0, 0, 0));
-        const todayEnd = new Date(); // Use current time for "today"
+        // --- Daily Report ---
+        // Create a new Date object representing the start of today.
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
+        // --- Weekly Report ---
+        // Start from `todayStart` and go back to the beginning of the week (Sunday).
         const weekStart = new Date(todayStart);
-        // Set to the beginning of the week (Sunday)
         weekStart.setDate(weekStart.getDate() - weekStart.getDay()); 
         
+        // --- Monthly Report ---
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         
+        // --- Yearly Report ---
         const yearStart = new Date(now.getFullYear(), 0, 1);
         
         return {
-            daily: calculateStats(orders, expenses, todayStart, todayEnd),
+            daily: calculateStats(orders, expenses, todayStart, now),
             weekly: calculateStats(orders, expenses, weekStart, now),
             monthly: calculateStats(orders, expenses, monthStart, now),
             yearly: calculateStats(orders, expenses, yearStart, now),
