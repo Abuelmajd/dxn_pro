@@ -1,0 +1,827 @@
+// ================================================================================================
+// ============================= Google Apps Script Backend (Code.gs) =============================
+//
+// INSTRUCTIONS:
+//
+// 1. Ensure your Google Sheet has 9 tabs with these exact English names:
+//    - Products
+//    - Categories
+//    - Customers
+//    - Orders
+//    - OrderItems
+//    - Expenses
+//    - CustomerSelections
+//    - CustomerSelectionItems
+//    - Settings
+//
+// 2. VERY IMPORTANT: The first row of each sheet MUST have the following English headers exactly.
+//    Please copy and paste these headers precisely to ensure the code works correctly.
+//
+//    - Products sheet headers:
+//      id, name, categoryId, description, price, memberPrice, normalPriceUSD, memberPriceUSD, imageUrl, isAvailable, points
+//
+//    - Categories sheet headers:
+//      id, name
+//
+//    - Customers sheet headers:
+//      id, name, phone, whatsapp, email, address, registrationDate
+//
+//    - Orders sheet headers:
+//      id, customerId, customerName, totalPrice, totalPoints, createdAt
+//
+//    - OrderItems sheet headers:
+//      orderId, productId, name, price, quantity, points
+//
+//    - Expenses sheet headers:
+//      id, description, amount, date
+//
+//    - CustomerSelections sheet headers:
+//      id, customerName, customerPhone, customerEmail, customerAddress, createdAt, status
+//
+//    - CustomerSelectionItems sheet headers:
+//      selectionId, productId, name, price, quantity, points
+//
+//    - Settings sheet headers:
+//      key, value
+//
+// 3. In Google Sheets, go to Extensions > Apps Script.
+// 4. Delete any existing code in `Code.gs` and paste this entire script.
+// 5. Click Deploy > New deployment.
+// 6. Select "Web app" as the deployment type.
+// 7. In the settings:
+//    - For "Execute as", select "Me".
+//    - For "Who has access", select "Anyone".
+// 8. Click "Deploy". Authorize the script when prompted.
+// 9. Copy the Web app URL and paste it into the `GOOGLE_SCRIPT_URL` variable in your frontend code
+//    (in the file `context/AppContext.tsx`).
+//
+// ================================================================================================
+
+// --- MERCHANT NOTIFICATION SETTINGS ---
+// To receive notifications for new customer orders, fill in the details below.
+// To disable a notification method, leave its values as empty strings ('').
+const MERCHANT_NOTIFICATIONS = {
+  // Your email address to receive notifications.
+  EMAIL: '', // e.g., 'abuelmajd3@gmail.com'
+  
+  // --- Telegram Bot Settings ---
+  // 1. Create a new bot by talking to @BotFather on Telegram.
+  // 2. BotFather will give you a "token". Paste it here.
+  TELEGRAM_BOT_TOKEN: '', // e.g., '8465067674:AAFRQf4VOAi80fiBsMPP8JUGal0DRAuMpy8'
+  
+  // 3. Send a message to your new bot.
+  // 4. Then, get your Chat ID by talking to a bot like @userinfobot. It's usually a long number.
+  TELEGRAM_CHAT_ID: '' // e.g., '940722838'
+};
+
+// --- CONFIGURATION ---
+const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+
+const SHEET_MAPPING = {
+  PRODUCTS: 'Products',
+  CATEGORIES: 'Categories',
+  CUSTOMERS: 'Customers',
+  ORDERS: 'Orders',
+  ORDER_ITEMS: 'OrderItems',
+  EXPENSES: 'Expenses',
+  CUSTOMER_SELECTIONS: 'CustomerSelections',
+  CUSTOMER_SELECTION_ITEMS: 'CustomerSelectionItems',
+  SETTINGS: 'Settings'
+};
+
+const REQUIRED_SCHEMA = {
+  'Products': ['id', 'name', 'categoryId', 'description', 'price', 'memberPrice', 'normalPriceUSD', 'memberPriceUSD', 'imageUrl', 'isAvailable', 'points'],
+  'Categories': ['id', 'name'],
+  'Customers': ['id', 'name', 'phone', 'whatsapp', 'email', 'address', 'registrationDate'],
+  'Orders': ['id', 'customerId', 'customerName', 'totalPrice', 'totalPoints', 'createdAt'],
+  'OrderItems': ['orderId', 'productId', 'name', 'price', 'quantity', 'points'],
+  'Expenses': ['id', 'description', 'amount', 'date'],
+  'CustomerSelections': ['id', 'customerName', 'customerPhone', 'customerEmail', 'customerAddress', 'createdAt', 'status'],
+  'CustomerSelectionItems': ['selectionId', 'productId', 'name', 'price', 'quantity', 'points'],
+  'Settings': ['key', 'value']
+};
+
+
+// --- CORE FUNCTIONS ---
+
+const DEFAULT_SETTINGS = {
+  language: 'ar',
+  currency: { code: 'ILS', symbol: '₪' },
+  numberFormat: 'en',
+  theme: 'light',
+  profitMarginILS: 20,
+  discounts: [],
+};
+
+function _getSettings() {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.SETTINGS);
+  if (!sheet) return DEFAULT_SETTINGS;
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return DEFAULT_SETTINGS;
+  
+  const settings = {};
+  data.slice(1).forEach(row => {
+    const key = row[0];
+    let value = row[1];
+    if (key) {
+      try {
+        // Try to parse if it's JSON (like for discounts)
+        value = JSON.parse(value);
+      } catch (e) {
+        // Not JSON, check for boolean or number
+        if (value === 'true') value = true;
+        else if (value === 'false') value = false;
+        else if (!isNaN(parseFloat(value)) && isFinite(value)) value = parseFloat(value);
+      }
+      settings[key] = value;
+    }
+  });
+  
+  return { ...DEFAULT_SETTINGS, ...settings };
+}
+
+function _updateSettings(payload) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.SETTINGS);
+  if (!sheet) throw new Error("Settings sheet not found.");
+  
+  const headers = getHeaders(sheet);
+  const keyColumnIndex = headers.findIndex(h => h.toLowerCase() === 'key');
+  const valueColumnIndex = headers.findIndex(h => h.toLowerCase() === 'value');
+  
+  if (keyColumnIndex === -1 || valueColumnIndex === -1) {
+    throw new Error("Settings sheet must have 'key' and 'value' columns.");
+  }
+  
+  let data = sheet.getDataRange().getValues();
+
+  for (const key in payload) {
+    if (payload.hasOwnProperty(key)) {
+      let value = payload[key];
+      
+      if (typeof value === 'object' && value !== null) {
+        value = JSON.stringify(value);
+      }
+      
+      const rowIndex = data.findIndex(row => String(row[keyColumnIndex]).trim() === String(key).trim());
+      
+      if (rowIndex > 0) {
+        sheet.getRange(rowIndex + 1, valueColumnIndex + 1).setValue(value);
+      } else {
+        sheet.appendRow([key, value]);
+      }
+      // We must refetch data if we append a row to get correct rowIndex for subsequent keys
+      data = sheet.getDataRange().getValues();
+    }
+  }
+}
+
+/**
+ * Reusable function to fetch and structure all data.
+ */
+function _getAllData() {
+  const data = {
+    products: getSheetData(SHEET_MAPPING.PRODUCTS),
+    categories: getSheetData(SHEET_MAPPING.CATEGORIES),
+    customers: getSheetData(SHEET_MAPPING.CUSTOMERS),
+    orders: getSheetData(SHEET_MAPPING.ORDERS),
+    expenses: getSheetData(SHEET_MAPPING.EXPENSES),
+    customerSelections: getSheetData(SHEET_MAPPING.CUSTOMER_SELECTIONS),
+    settings: _getSettings(),
+  };
+  
+  const orderItems = getSheetData(SHEET_MAPPING.ORDER_ITEMS);
+  data.orders.forEach(order => {
+      order.items = orderItems.filter(item => item.orderId === order.id);
+  });
+
+  const selectionItems = getSheetData(SHEET_MAPPING.CUSTOMER_SELECTION_ITEMS);
+  data.customerSelections.forEach(selection => {
+      selection.items = selectionItems.filter(item => item.selectionId === selection.id);
+  });
+
+  return { status: 'success', data: data };
+}
+
+
+/**
+ * Main entry point for GET requests. Can be used for testing.
+ */
+function doGet(e) {
+  return createJsonResponse({ status: 'success', message: 'API is running.' });
+}
+
+/**
+ * Main entry point for POST requests. Acts as a router for various actions.
+ */
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000); 
+  
+  try {
+    if (!e.postData || !e.postData.contents) {
+      throw new Error("No data received in POST request.");
+    }
+    const request = JSON.parse(e.postData.contents);
+    const action = request.action;
+    const payload = request.payload || {};
+
+    if (!action) throw new Error("Action not specified in request body.");
+
+    switch (action) {
+      case 'getAllData': return createJsonResponse(_getAllData());
+      case 'getExchangeRate': return handleGetExchangeRate();
+      case 'addProduct': return handleAddProduct(payload);
+      case 'updateProduct': return handleUpdateProduct(payload);
+      case 'deleteProduct': return handleDeleteProduct(payload);
+      case 'toggleProductAvailability': return handleToggleProductAvailability(payload);
+      case 'addOrder': return handleAddOrder(payload);
+      case 'deleteOrder': return handleDeleteOrder(payload);
+      case 'deleteCustomer': return handleDeleteCustomer(payload);
+      case 'addExpense': return handleAddExpense(payload);
+      case 'deleteExpense': return handleDeleteExpense(payload);
+      case 'addCustomerSelection': return handleAddCustomerSelection(payload);
+      case 'processSelection': return handleProcessSelection(payload);
+      case 'runHealthCheck': return handleHealthCheck();
+      case 'updateSettings': return handleUpdateSettings(payload);
+      default: throw new Error(`Unknown action: ${action}`);
+    }
+  } catch (error) {
+    Logger.log(error.stack);
+    return createJsonResponse({ status: 'error', message: error.message, stack: error.stack });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// --- ACTION HANDLERS ---
+function handleUpdateSettings(payload) {
+    _updateSettings(payload);
+    // Return the newly saved settings object
+    return createJsonResponse({ status: 'success', data: _getSettings() });
+}
+
+function handleGetExchangeRate() {
+  try {
+    const response = UrlFetchApp.fetch('https://api.exchangerate-api.com/v4/latest/USD');
+    const data = JSON.parse(response.getContentText());
+    const rate = data.rates.ILS;
+    if (!rate) {
+      Logger.log('ILS rate not found in API response. Using fallback.');
+      return createJsonResponse({ status: 'success', data: { rate: 3.7 } });
+    }
+    return createJsonResponse({ status: 'success', data: { rate: rate } });
+  } catch (error) {
+    Logger.log('Failed to fetch exchange rate from API: ' + error.toString() + '. Using fallback.');
+    return createJsonResponse({ status: 'success', data: { rate: 3.7 } }); 
+  }
+}
+
+function handleAddProduct(payload) {
+    const newProduct = { ...payload, id: generateUniqueId(), isAvailable: true };
+    
+    // If imageUrl is a base64 string, save it to Google Drive and replace with the URL
+    if (newProduct.imageUrl && newProduct.imageUrl.startsWith('data:image')) {
+        const fileName = `product_${newProduct.id}_${new Date().getTime()}`;
+        newProduct.imageUrl = _saveBase64ImageToDrive(newProduct.imageUrl, fileName);
+    }
+
+    appendRowFromObject(SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.PRODUCTS), newProduct);
+    return createJsonResponse({ status: 'success', data: newProduct });
+}
+
+function handleUpdateProduct(payload) {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.PRODUCTS);
+    const headers = getHeaders(sheet);
+    const data = sheet.getDataRange().getValues();
+    const idColumnIndex = headers.findIndex(h => h.toLowerCase() === 'id');
+    const rowIndex = data.findIndex(row => String(row[idColumnIndex]).trim() == String(payload.id).trim());
+
+    if (rowIndex < 1) { // not found
+      throw new Error(`Product with ID ${payload.id} not found for update.`);
+    }
+
+    const existingProduct = mapRowToAnObject(data[rowIndex], headers);
+    const oldImageUrl = existingProduct.imageUrl;
+    const newImageUrl = payload.imageUrl;
+    
+    if (newImageUrl && newImageUrl.startsWith('data:image')) {
+        const fileName = `product_${payload.id}_${new Date().getTime()}`;
+        payload.imageUrl = _saveBase64ImageToDrive(newImageUrl, fileName);
+        _deleteImageFromDrive(oldImageUrl);
+    }
+
+    updateRowById(SHEET_MAPPING.PRODUCTS, payload.id, payload);
+    return createJsonResponse({ status: 'success', data: payload });
+}
+
+function handleDeleteProduct(payload) {
+    if (!payload || !payload.productId) {
+        throw new Error("Product ID is missing.");
+    }
+    const productId = payload.productId;
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.PRODUCTS);
+    const headers = getHeaders(sheet);
+    const data = sheet.getDataRange().getValues();
+    const idColumnIndex = headers.findIndex(h => h.toLowerCase() === 'id');
+    const rowIndex = data.findIndex(row => String(row[idColumnIndex]).trim() == String(productId).trim());
+
+    if (rowIndex > 0) {
+        const productToDelete = mapRowToAnObject(data[rowIndex], headers);
+        _deleteImageFromDrive(productToDelete.imageUrl);
+    }
+
+    deleteRowById(SHEET_MAPPING.PRODUCTS, productId);
+    
+    return createJsonResponse({ status: 'success' });
+}
+
+
+function handleToggleProductAvailability(payload) {
+    const { productId } = payload;
+    if (!productId) throw new Error("Product ID is required.");
+
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.PRODUCTS);
+    const headers = getHeaders(sheet);
+    const data = sheet.getDataRange().getValues();
+    
+    const idColumnIndex = headers.findIndex(h => h.toLowerCase() === 'id');
+    const isAvailableColumnIndex = headers.findIndex(h => h.toLowerCase() === 'isavailable');
+    if (idColumnIndex === -1 || isAvailableColumnIndex === -1) throw new Error("Required columns ('id', 'isAvailable') not found in Products sheet.");
+
+    const rowIndex = data.findIndex(row => String(row[idColumnIndex]).trim() == String(productId).trim());
+
+    if (rowIndex > 0) {
+        const currentValue = data[rowIndex][isAvailableColumnIndex];
+        const newValue = !(currentValue === true || String(currentValue).toLowerCase() === 'true');
+        sheet.getRange(rowIndex + 1, isAvailableColumnIndex + 1).setValue(newValue);
+        return createJsonResponse({ status: 'success', data: { productId: productId, isAvailable: newValue } });
+    } else {
+        throw new Error(`Product with ID ${productId} not found.`);
+    }
+}
+
+
+function handleAddOrder(payload) {
+    const { customerData, items, selectionId } = payload;
+    
+    const customersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMERS);
+    const headers = getHeaders(customersSheet);
+    const phoneColumnIndex = headers.findIndex(h => h.toLowerCase() === 'phone');
+    const customersData = customersSheet.getDataRange().getValues();
+    
+    let customerRowIndex = -1;
+    if (customerData.phone && phoneColumnIndex !== -1) {
+      const searchPhone = String(customerData.phone).trim();
+      customerRowIndex = customersData.findIndex((row, index) => {
+        if (index === 0) return false; // Skip header
+        return String(row[phoneColumnIndex]).trim() === searchPhone;
+      });
+    }
+    
+    let customer;
+    if (customerRowIndex !== -1) {
+        const existingCustomer = mapRowToAnObject(customersData[customerRowIndex], headers);
+        customer = { ...existingCustomer, ...customerData };
+        updateRowById(SHEET_MAPPING.CUSTOMERS, customer.id, customer);
+    } else {
+        customer = { ...customerData, id: generateUniqueId(), registrationDate: new Date().toISOString() };
+        appendRowFromObject(customersSheet, customer);
+    }
+    
+    const ordersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDERS);
+    const newOrderId = generateUniqueId();
+    const totalPrice = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const totalPoints = items.reduce((sum, item) => sum + (item.points * item.quantity), 0);
+    
+    const newOrder = {
+        id: newOrderId,
+        customerId: customer.id,
+        customerName: customer.name,
+        totalPrice: totalPrice,
+        totalPoints: totalPoints,
+        createdAt: new Date().toISOString()
+    };
+    appendRowFromObject(ordersSheet, newOrder);
+
+    const orderItemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDER_ITEMS);
+    items.forEach(item => {
+        const newOrderItem = { ...item, orderId: newOrderId };
+        appendRowFromObject(orderItemsSheet, newOrderItem);
+    });
+
+    if (selectionId) {
+      try {
+        updateRowById(SHEET_MAPPING.CUSTOMER_SELECTIONS, selectionId, { status: 'processed' });
+      } catch (e) {
+        Logger.log("Failed to update selection " + selectionId + " status. Error: " + e.toString());
+      }
+    }
+
+    return createJsonResponse({ 
+        status: 'success', 
+        data: { 
+            newOrder: { ...newOrder, items }, 
+            updatedCustomer: customer,
+            processedSelectionId: selectionId 
+        } 
+    });
+}
+
+function handleDeleteOrder(payload) {
+  const { orderId } = payload;
+  if (!orderId) throw new Error("Order ID is required to delete.");
+
+  const itemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDER_ITEMS);
+  const itemsHeaders = getHeaders(itemsSheet);
+  const itemsData = itemsSheet.getDataRange().getValues();
+  const orderIdColumnIndex = itemsHeaders.findIndex(h => h.toLowerCase() === 'orderid');
+
+  if (orderIdColumnIndex !== -1) {
+    for (let i = itemsData.length - 1; i > 0; i--) {
+      if (String(itemsData[i][orderIdColumnIndex]).trim() === String(orderId).trim()) {
+        itemsSheet.deleteRow(i + 1);
+      }
+    }
+  }
+
+  deleteRowById(SHEET_MAPPING.ORDERS, orderId);
+
+  return createJsonResponse({ status: 'success', data: { deletedOrderId: orderId } });
+}
+
+function handleDeleteCustomer(payload) {
+  const { customerId } = payload;
+  if (!customerId) throw new Error("Customer ID is required to delete.");
+  
+  const ordersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDERS);
+  const ordersHeaders = getHeaders(ordersSheet);
+  const ordersData = ordersSheet.getDataRange().getValues();
+  const customerIdColumnIndex = ordersHeaders.findIndex(h => h.toLowerCase() === 'customerid');
+  const orderIdHeaderIndex = ordersHeaders.findIndex(h => h.toLowerCase() === 'id');
+  
+  const orderIdsToDelete = [];
+  if (customerIdColumnIndex !== -1 && orderIdHeaderIndex !== -1) {
+    for (let i = ordersData.length - 1; i > 0; i--) {
+      if (String(ordersData[i][customerIdColumnIndex]).trim() === String(customerId).trim()) {
+        orderIdsToDelete.push(String(ordersData[i][orderIdHeaderIndex]).trim());
+        ordersSheet.deleteRow(i + 1);
+      }
+    }
+  }
+
+  if (orderIdsToDelete.length > 0) {
+    const itemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.ORDER_ITEMS);
+    const itemsHeaders = getHeaders(itemsSheet);
+    const itemsData = itemsSheet.getDataRange().getValues();
+    const orderIdItemColumnIndex = itemsHeaders.findIndex(h => h.toLowerCase() === 'orderid');
+
+    if (orderIdItemColumnIndex !== -1) {
+      for (let i = itemsData.length - 1; i > 0; i--) {
+        const itemOrderId = String(itemsData[i][orderIdItemColumnIndex]).trim();
+        if (orderIdsToDelete.includes(itemOrderId)) {
+          itemsSheet.deleteRow(i + 1);
+        }
+      }
+    }
+  }
+
+  deleteRowById(SHEET_MAPPING.CUSTOMERS, customerId);
+
+  return createJsonResponse({ status: 'success', data: { deletedCustomerId: customerId } });
+}
+
+function handleAddExpense(payload) {
+    const newExpense = { ...payload, id: generateUniqueId(), date: new Date(payload.date).toISOString() };
+    appendRowFromObject(SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.EXPENSES), newExpense);
+    return createJsonResponse({ status: 'success', data: newExpense });
+}
+
+function handleDeleteExpense(payload) {
+    deleteRowById(SHEET_MAPPING.EXPENSES, payload.expenseId);
+    return createJsonResponse({ status: 'success', data: { success: true } });
+}
+
+function handleAddCustomerSelection(payload) {
+    // 1. Add or Update Customer Record
+    const { customerName, customerPhone, customerEmail, customerAddress, items } = payload;
+    const customerData = {
+      name: customerName,
+      phone: customerPhone,
+      whatsapp: customerPhone, // Assume phone and whatsapp are the same from this form
+      email: customerEmail,
+      address: customerAddress
+    };
+
+    const customersSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMERS);
+    const headers = getHeaders(customersSheet);
+    const phoneColumnIndex = headers.findIndex(h => h.toLowerCase() === 'phone');
+    const customersData = customersSheet.getDataRange().getValues();
+    
+    let customerRowIndex = -1;
+    if (customerData.phone && phoneColumnIndex !== -1) {
+      const searchPhone = String(customerData.phone).trim();
+      customerRowIndex = customersData.findIndex((row, index) => {
+        if (index === 0) return false; // Skip header
+        return String(row[phoneColumnIndex]).trim() === searchPhone;
+      });
+    }
+    
+    let customer;
+    if (customerRowIndex !== -1) { // Found existing customer
+        const existingCustomer = mapRowToAnObject(customersData[customerRowIndex], headers);
+        customer = { ...existingCustomer, ...customerData };
+        updateRowById(SHEET_MAPPING.CUSTOMERS, customer.id, customer);
+    } else { // New customer
+        customer = { ...customerData, id: generateUniqueId(), registrationDate: new Date().toISOString() };
+        appendRowFromObject(customersSheet, customer);
+    }
+
+    // 2. Save Customer Selection
+    const selectionsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMER_SELECTIONS);
+    const newSelectionId = generateUniqueId();
+    const newSelection = { 
+      id: newSelectionId, 
+      customerName: payload.customerName,
+      customerPhone: payload.customerPhone,
+      customerEmail: payload.customerEmail,
+      customerAddress: payload.customerAddress,
+      createdAt: new Date().toISOString(), 
+      status: 'pending' 
+    };
+    appendRowFromObject(selectionsSheet, newSelection);
+    
+    // 3. Save Selection Items
+    const selectionItemsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_MAPPING.CUSTOMER_SELECTION_ITEMS);
+    payload.items.forEach(item => {
+        const newSelectionItem = { ...item, selectionId: newSelectionId };
+        appendRowFromObject(selectionItemsSheet, newSelectionItem);
+    });
+
+    // 4. Send Notification
+    try {
+      _sendNotification(payload);
+    } catch(e) {
+      Logger.log(`Notification sending failed: ${e.toString()}`);
+    }
+
+    return createJsonResponse({ status: 'success', data: newSelection });
+}
+
+
+function handleProcessSelection(payload) {
+    updateRowById(SHEET_MAPPING.CUSTOMER_SELECTIONS, payload.selectionId, { status: 'processed' });
+    return createJsonResponse({ status: 'success', data: { success: true } });
+}
+
+function handleHealthCheck() {
+  const results = [];
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const allSheets = spreadsheet.getSheets().map(s => s.getName());
+
+  for (const sheetName in REQUIRED_SCHEMA) {
+    if (allSheets.includes(sheetName)) {
+      results.push({ check: `Sheet '${sheetName}'`, status: 'success', details: `Sheet exists.` });
+      
+      const sheet = spreadsheet.getSheetByName(sheetName);
+      const actualHeaders = getHeaders(sheet).map(h => h.toLowerCase());
+      const requiredHeaders = REQUIRED_SCHEMA[sheetName].map(h => h.toLowerCase());
+      
+      const missingHeaders = requiredHeaders.filter(h => !actualHeaders.includes(h));
+
+      if (missingHeaders.length === 0) {
+        results.push({ check: `Headers for '${sheetName}'`, status: 'success', details: 'All required headers are present.' });
+      } else {
+        results.push({ check: `Headers for '${sheetName}'`, status: 'error', details: `Missing headers: ${missingHeaders.join(', ')}` });
+      }
+
+    } else {
+      results.push({ check: `Sheet '${sheetName}'`, status: 'error', details: `Sheet is missing.` });
+    }
+  }
+  return createJsonResponse({ status: 'success', data: results });
+}
+
+// --- NOTIFICATION FUNCTIONS ---
+
+function _sendNotification(selectionData) {
+  const { customerName, customerPhone, customerEmail, customerAddress, items } = selectionData;
+  
+  if (!MERCHANT_NOTIFICATIONS.EMAIL && (!MERCHANT_NOTIFICATIONS.TELEGRAM_BOT_TOKEN || !MERCHANT_NOTIFICATIONS.TELEGRAM_CHAT_ID)) {
+    return;
+  }
+      
+  let total = 0;
+  const itemsList = items.map(item => {
+    const itemTotal = item.price * item.quantity;
+    total += itemTotal;
+    return `${item.name} (x${item.quantity}) - ${itemTotal.toFixed(2)}`;
+  }).join('\n');
+
+  const subject = `طلب جديد من ${customerName}`;
+  
+  let messageBody = `*طلب جديد وصل!*\n\n` +
+                    `*العميل:* ${customerName}\n` +
+                    `*الهاتف:* ${customerPhone}\n`;
+  if (customerEmail) {
+    messageBody += `*البريد:* ${customerEmail}\n`;
+  }
+  if (customerAddress) {
+    messageBody += `*العنوان:* ${customerAddress}\n`;
+  }
+  messageBody += `\n*المنتجات:*\n` +
+                 `${itemsList}\n\n` +
+                 `*الإجمالي:* ${total.toFixed(2)}`;
+
+  if (MERCHANT_NOTIFICATIONS.EMAIL) {
+    try {
+      const emailBody = messageBody.replace(/\*/g, '');
+      MailApp.sendEmail(MERCHANT_NOTIFICATIONS.EMAIL, subject, emailBody);
+    } catch (e) {
+      Logger.log(`Failed to send email notification: ${e.toString()}`);
+    }
+  }
+
+  if (MERCHANT_NOTIFICATIONS.TELEGRAM_BOT_TOKEN && MERCHANT_NOTIFICATIONS.TELEGRAM_CHAT_ID) {
+    try {
+      const telegramUrl = `https://api.telegram.org/bot${MERCHANT_NOTIFICATIONS.TELEGRAM_BOT_TOKEN}/sendMessage`;
+      const payload = {
+        chat_id: MERCHANT_NOTIFICATIONS.TELEGRAM_CHAT_ID,
+        text: messageBody,
+        parse_mode: 'Markdown'
+      };
+      UrlFetchApp.fetch(telegramUrl, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify(payload)
+      });
+    } catch (e) {
+      Logger.log(`Failed to send Telegram notification: ${e.toString()}`);
+    }
+  }
+}
+
+
+// --- IMAGE HANDLING HELPERS ---
+
+function _saveBase64ImageToDrive(base64DataUrl, fileName) {
+  const FOLDER_NAME = 'DXN_App_Images';
+  let folders = DriveApp.getFoldersByName(FOLDER_NAME);
+  let folder;
+
+  if (folders.hasNext()) {
+    folder = folders.next();
+  } else {
+    folder = DriveApp.createFolder(FOLDER_NAME);
+  }
+  
+  folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  const parts = base64DataUrl.split(',');
+  const mimeType = parts[0].match(/:(.*?);/)[1] || 'image/jpeg';
+  const base64Data = parts[1];
+  const decodedData = Utilities.base64Decode(base64Data);
+  const blob = Utilities.newBlob(decodedData, mimeType, fileName);
+
+  const file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); 
+
+  const fileId = file.getId();
+  const imageUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+
+  return imageUrl;
+}
+
+function _deleteImageFromDrive(imageUrl) {
+  if (imageUrl && imageUrl.includes('lh3.googleusercontent.com/d/')) {
+    try {
+      const fileId = imageUrl.split('/d/')[1].split('/')[0];
+      DriveApp.getFileById(fileId).setTrashed(true);
+    } catch (e) {
+      Logger.log(`Could not delete old image file with URL ${imageUrl}: ${e.toString()}`);
+    }
+  }
+}
+
+
+// --- HELPER FUNCTIONS ---
+
+function createJsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function generateUniqueId() {
+  return Utilities.getUuid();
+}
+
+function getHeaders(sheet) {
+  if (sheet.getLastRow() === 0) return [];
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => h.toString().trim());
+}
+
+function getSheetData(sheetName) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
+  if (!sheet) return [];
+  
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+
+  const headers = getHeaders(sheet);
+  return values.slice(1).map(row => {
+    if (row[0] === '') return null; 
+    return mapRowToAnObject(row, headers);
+  }).filter(Boolean);
+}
+
+function mapRowToAnObject(row, headers) {
+    const obj = {};
+    headers.forEach((header, index) => {
+        if (!header) return;
+        let key = header.charAt(0).toLowerCase() + header.slice(1);
+        let value = row[index];
+        const lowerKey = key.toLowerCase();
+
+        if (['price', 'memberprice', 'amount', 'quantity', 'points', 'totalprice', 'totalpoints', 'normalpriceusd', 'memberpriceusd'].includes(lowerKey)) {
+            value = parseFloat(value) || 0;
+        } else if (lowerKey === 'isavailable') {
+            value = value === true || String(value).toLowerCase() === 'true';
+        } else if ((lowerKey.includes('date') || lowerKey.includes('createdat') || lowerKey.includes('registrationdate')) && value && !isNaN(new Date(value).getTime())) {
+            value = new Date(value).toISOString();
+        }
+        obj[key] = value;
+    });
+    return obj;
+}
+
+function appendRowFromObject(sheet, obj) {
+    const headers = getHeaders(sheet);
+    const lowerCaseValueMap = {};
+    for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+            lowerCaseValueMap[key.toLowerCase()] = obj[key];
+        }
+    }
+
+    const newRow = headers.map(header => {
+        let value = lowerCaseValueMap[header.toLowerCase()];
+        const lowerHeader = header.toLowerCase();
+        // Force phone/whatsapp numbers to be treated as strings by Google Sheets
+        if ((lowerHeader === 'phone' || lowerHeader === 'whatsapp' || lowerHeader === 'customerphone') && value && String(value).startsWith('0')) {
+            value = "'" + value;
+        }
+        return (value !== undefined && value !== null) ? value : '';
+    });
+    sheet.appendRow(newRow);
+}
+
+function updateRowById(sheetName, recordId, payload) {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
+    const headers = getHeaders(sheet);
+    const idColumnIndex = headers.findIndex(h => h.toLowerCase() === 'id');
+    if (idColumnIndex === -1) throw new Error(`'id' column not found in sheet "${sheetName}".`);
+
+    const data = sheet.getDataRange().getValues();
+    const rowIndex = data.findIndex(row => String(row[idColumnIndex]).trim() == String(recordId).trim());
+    
+    if (rowIndex > 0) {
+        const existingRecord = mapRowToAnObject(data[rowIndex], headers);
+        const updatedRecord = { ...existingRecord, ...payload };
+        
+        const lowerCaseValueMap = {};
+        for (const key in updatedRecord) {
+            if (updatedRecord.hasOwnProperty(key)) {
+                lowerCaseValueMap[key.toLowerCase()] = updatedRecord[key];
+            }
+        }
+
+        const updatedRow = headers.map(header => {
+            let value = lowerCaseValueMap[header.toLowerCase()];
+            const lowerHeader = header.toLowerCase();
+            // Force phone/whatsapp numbers to be treated as strings by Google Sheets
+            if ((lowerHeader === 'phone' || lowerHeader === 'whatsapp' || lowerHeader === 'customerphone') && value && String(value).startsWith('0')) {
+                value = "'" + value;
+            }
+            return (value !== undefined && value !== null) ? value : '';
+        });
+
+        sheet.getRange(rowIndex + 1, 1, 1, headers.length).setValues([updatedRow]);
+    } else {
+        throw new Error(`Record with ID ${recordId} not found in "${sheetName}".`);
+    }
+}
+
+function deleteRowById(sheetName, recordId) {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
+    const headers = getHeaders(sheet);
+    const idColumnIndex = headers.findIndex(h => h.toLowerCase() === 'id');
+    if (idColumnIndex === -1) throw new Error(`'id' column not found in sheet "${sheetName}".`);
+    
+    const data = sheet.getDataRange().getValues();
+    const rowIndex = data.findIndex(row => String(row[idColumnIndex]).trim() == String(recordId).trim());
+    
+    if (rowIndex > 0) {
+        sheet.deleteRow(rowIndex + 1);
+    } else {
+        throw new Error(`Record with ID ${recordId} not found in "${sheetName}".`);
+    }
+}
